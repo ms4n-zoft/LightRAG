@@ -39,6 +39,11 @@ i18n
     // Configuration to handle missing translations
     returnEmptyString: false,
     returnNull: false,
+    // Add these for better initialization handling
+    react: {
+      useSuspense: false // Disable suspense mode for better compatibility
+    },
+    initImmediate: true // Initialize immediately
   })
 
 // Subscribe to language changes

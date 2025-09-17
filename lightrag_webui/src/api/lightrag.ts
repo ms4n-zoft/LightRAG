@@ -264,7 +264,7 @@ const axiosInstance = axios.create({
 })
 
 // Interceptor: add api key and check authentication
-axiosInstance.interceptors.request.use((config) => {
+axiosInstance.interceptors.request.use((config: any) => {
   const apiKey = useSettingsStore.getState().apiKey
   const token = localStorage.getItem('LIGHTRAG-API-TOKEN');
 
@@ -280,7 +280,7 @@ axiosInstance.interceptors.request.use((config) => {
 
 // Interceptor：hanle error
 axiosInstance.interceptors.response.use(
-  (response) => response,
+  (response: any) => response,
   (error: AxiosError) => {
     if (error.response) {
       if (error.response?.status === 401) {
@@ -562,7 +562,7 @@ export const uploadDocument = async (
     // prettier-ignore
     onUploadProgress:
       onUploadProgress !== undefined
-        ? (progressEvent) => {
+        ? (progressEvent: any) => {
           const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total!)
           onUploadProgress(percentCompleted)
         }
@@ -761,5 +761,65 @@ export const getDocumentsPaginated = async (request: DocumentsRequest): Promise<
  */
 export const getDocumentStatusCounts = async (): Promise<StatusCountsResponse> => {
   const response = await axiosInstance.get('/documents/status_counts')
+  return response.data
+}
+
+// Product Ingestion Types
+export type ProductIngestionRequest = {
+  database: string
+  collection: string
+  filter_query?: Record<string, any>
+  limit?: number
+  skip?: number
+  batch_size?: number
+  working_dir?: string
+}
+
+export type ProductIngestionResponse = {
+  job_id: string
+  status: string
+  message: string
+  estimated_batches?: number
+  job_start: string
+}
+
+export type CollectionStatsResponse = {
+  database: string
+  collection: string
+  total_documents: number
+  sample_product?: Record<string, any>
+  estimated_batches: number
+}
+
+export type ProductIngestionJobsResponse = {
+  jobs: Record<string, any>
+  total_jobs: number
+}
+
+// Product Ingestion API Functions
+export const getCollectionStats = async (
+  database: string, 
+  collection: string
+): Promise<CollectionStatsResponse> => {
+  const response = await axiosInstance.get(
+    `/product_ingestion/stats?database=${encodeURIComponent(database)}&collection=${encodeURIComponent(collection)}`
+  )
+  return response.data
+}
+
+export const startProductIngestion = async (
+  request: ProductIngestionRequest
+): Promise<ProductIngestionResponse> => {
+  const response = await axiosInstance.post('/product_ingestion/start', request)
+  return response.data
+}
+
+export const getIngestionJobs = async (): Promise<ProductIngestionJobsResponse> => {
+  const response = await axiosInstance.get('/product_ingestion/jobs')
+  return response.data
+}
+
+export const getIngestionJobStatus = async (jobId: string): Promise<any> => {
+  const response = await axiosInstance.get(`/product_ingestion/jobs/${encodeURIComponent(jobId)}`)
   return response.data
 }

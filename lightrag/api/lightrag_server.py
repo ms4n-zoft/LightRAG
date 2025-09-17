@@ -49,6 +49,7 @@ from lightrag.api.routers.document_routes import (
 )
 from lightrag.api.routers.query_routes import create_query_routes
 from lightrag.api.routers.graph_routes import create_graph_routes
+from lightrag.api.routers.product_ingestion_routes import create_product_ingestion_routes
 from lightrag.api.routers.ollama_api import OllamaAPI
 
 from lightrag.utils import logger, set_verbose_debug
@@ -188,7 +189,8 @@ def create_app(args):
                 "SSL certificate and key files must be provided when SSL is enabled"
             )
         if not os.path.exists(args.ssl_certfile):
-            raise Exception(f"SSL certificate file not found: {args.ssl_certfile}")
+            raise Exception(
+                f"SSL certificate file not found: {args.ssl_certfile}")
         if not os.path.exists(args.ssl_keyfile):
             raise Exception(f"SSL key file not found: {args.ssl_keyfile}")
 
@@ -225,10 +227,12 @@ def create_app(args):
             # Only run auto scan when no other process started it first
             if should_start_autoscan:
                 # Create background task
-                task = asyncio.create_task(run_scanning_process(rag, doc_manager))
+                task = asyncio.create_task(
+                    run_scanning_process(rag, doc_manager))
                 app.state.background_tasks.add(task)
                 task.add_done_callback(app.state.background_tasks.discard)
-                logger.info(f"Process {os.getpid()} auto scan task started at startup.")
+                logger.info(
+                    f"Process {os.getpid()} auto scan task started at startup.")
 
             ASCIIColors.green("\nServer is ready to accept connections! 🚀\n")
 
@@ -358,8 +362,10 @@ def create_app(args):
                 system_prompt=system_prompt,
                 history_messages=history_messages,
                 base_url=args.llm_binding_host,
-                api_key=os.getenv("AZURE_OPENAI_API_KEY", args.llm_binding_api_key),
-                api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2024-08-01-preview"),
+                api_key=os.getenv("AZURE_OPENAI_API_KEY",
+                                  args.llm_binding_api_key),
+                api_version=os.getenv(
+                    "AZURE_OPENAI_API_VERSION", "2024-08-01-preview"),
                 **kwargs,
             )
 
@@ -437,7 +443,8 @@ def create_app(args):
                         # Fallback for cases where config cache wasn't initialized properly
                         from lightrag.llm.binding_options import OllamaEmbeddingOptions
 
-                        ollama_options = OllamaEmbeddingOptions.options_dict(args)
+                        ollama_options = OllamaEmbeddingOptions.options_dict(
+                            args)
 
                     return await ollama_embed(
                         texts,
@@ -493,7 +500,8 @@ def create_app(args):
             history_messages = []
 
         # Use global temperature for Bedrock
-        kwargs["temperature"] = get_env_value("BEDROCK_LLM_TEMPERATURE", 1.0, float)
+        kwargs["temperature"] = get_env_value(
+            "BEDROCK_LLM_TEMPERATURE", 1.0, float)
 
         return await bedrock_complete_if_cache(
             args.llm_model,
@@ -533,7 +541,8 @@ def create_app(args):
         selected_rerank_func = rerank_functions.get(args.rerank_binding)
         if not selected_rerank_func:
             logger.error(f"Unsupported rerank binding: {args.rerank_binding}")
-            raise ValueError(f"Unsupported rerank binding: {args.rerank_binding}")
+            raise ValueError(
+                f"Unsupported rerank binding: {args.rerank_binding}")
 
         # Get default values from selected_rerank_func if args values are None
         if args.rerank_model is None or args.rerank_binding_host is None:
@@ -629,6 +638,7 @@ def create_app(args):
     )
     app.include_router(create_query_routes(rag, api_key, args.top_k))
     app.include_router(create_graph_routes(rag, api_key))
+    app.include_router(create_product_ingestion_routes(api_key))
 
     # Add Ollama API routes
     ollama_api = OllamaAPI(rag, top_k=args.top_k, api_key=api_key)
@@ -688,7 +698,8 @@ def create_app(args):
             }
         username = form_data.username
         if auth_handler.accounts.get(username) != form_data.password:
-            raise HTTPException(status_code=401, detail="Incorrect credentials")
+            raise HTTPException(
+                status_code=401, detail="Incorrect credentials")
 
         # Regular user login
         user_token = auth_handler.create_token(
@@ -830,14 +841,16 @@ def configure_logging():
 
     # Get log directory path from environment variable
     log_dir = os.getenv("LOG_DIR", os.getcwd())
-    log_file_path = os.path.abspath(os.path.join(log_dir, DEFAULT_LOG_FILENAME))
+    log_file_path = os.path.abspath(
+        os.path.join(log_dir, DEFAULT_LOG_FILENAME))
 
     print(f"\nLightRAG log file: {log_file_path}\n")
     os.makedirs(os.path.dirname(log_dir), exist_ok=True)
 
     # Get log file max size and backup count from environment variables
     log_max_bytes = get_env_value("LOG_MAX_BYTES", DEFAULT_LOG_MAX_BYTES, int)
-    log_backup_count = get_env_value("LOG_BACKUP_COUNT", DEFAULT_LOG_BACKUP_COUNT, int)
+    log_backup_count = get_env_value(
+        "LOG_BACKUP_COUNT", DEFAULT_LOG_BACKUP_COUNT, int)
 
     logging.config.dictConfig(
         {

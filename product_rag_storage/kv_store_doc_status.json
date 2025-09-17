@@ -1,0 +1,48 @@
+{
+  "doc-ef87b5945a05016f0c89dd2245b4a4a7": {
+    "status": "processing",
+    "chunks_count": 8,
+    "chunks_list": [
+      "chunk-e36a11d578f914fd2f0b7d8d52d82733",
+      "chunk-e0b0a5f60394e2739103ac1a8a68099b",
+      "chunk-b32d48531476fca888fbf74989b3de42",
+      "chunk-725904fa82a56d7e827321e626ae5ae9",
+      "chunk-6c24ffde9a89887a263c1097e6105a08",
+      "chunk-afd869960bb5afd3ac7cdb9240e63814",
+      "chunk-23e8044570fab996cbad33f863c152c4",
+      "chunk-bd3c19123682a23c5d1b2d30b895e87a"
+    ],
+    "content_summary": "PRODUCT BATCH 1 - 25 PRODUCTS\n\nProduct: SAP Concur\nProduct ID: 62cfea73a10437da5c6c655d\nCompany: Concur Technologies. Inc\nCompany Website: https://www.concur.com/\nCategory: Software Solution\nParent Categories: Finance & Accounting\n\nBusiness Purpose: ...",
+    "content_length": 86480,
+    "created_at": "2025-09-17T22:50:58.178692+00:00",
+    "updated_at": "2025-09-17T23:44:24.148658+00:00",
+    "file_path": "unknown_source",
+    "track_id": "insert_20250918_042058_43fdcda9",
+    "metadata": {
+      "processing_start_time": 1758152664
+    }
+  },
+  "doc-068d356fc90ee685c5b4eefc07351eb8": {
+    "status": "processing",
+    "chunks_count": 8,
+    "chunks_list": [
+      "chunk-8dd626f533250a025654ff56f36269e4",
+      "chunk-aaf32c6056928dd165867b40979bdee7",
+      "chunk-1b08e46b3a206c958a30d60fa0919ba5",
+      "chunk-ffe8e9986e3b90bf6de2c2233bee788d",
+      "chunk-41d299e1c58f35019ac538f5f9a0a183",
+      "chunk-84c39c1c45bc7992b6f8689c4a0017b6",
+      "chunk-4297f5cb1c111239784ce265ab2deb52",
+      "chunk-9c659a234149bbc334af032ed9b90b26"
+    ],
+    "content_summary": "PRODUCT BATCH 1 - 25 PRODUCTS\n\nProduct: Exabeam\nProduct ID: 62cfea93a10437da5c6c667f\nCompany: Exabeam\nCompany Website: https://www.exabeam.com/\nCategory: Software Solution\nParent Categories: Cloud & Infrastructure\n\nBusiness Purpose: Exabeam is an AI-...",
+    "content_length": 87179,
+    "created_at": "2025-09-17T22:58:04.569428+00:00",
+    "updated_at": "2025-09-17T23:44:24.160273+00:00",
+    "file_path": "unknown_source",
+    "track_id": "insert_20250918_042804_d34e958e",
+    "metadata": {
+      "processing_start_time": 1758152664
+    }
+  }
+}

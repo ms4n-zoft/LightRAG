@@ -126,9 +126,8 @@ class MongoDBClient:
             # Apply sorting with index hints for common patterns
             if sort_field:
                 cursor = cursor.sort(sort_field, sort_direction)
-            else:
-                # Default sort by updated_on for most recent products first
-                cursor = cursor.sort('updated_on', DESCENDING)
+            # Remove default sort to avoid memory limit issues with large collections
+            # For large datasets, natural order is more efficient
 
             # Apply pagination efficiently
             if skip > 0:
@@ -243,13 +242,12 @@ class MongoDBClient:
             # Get diverse samples by using different sort orders
             samples = []
 
-            # Get most recent products
+            # Get products without sorting to avoid memory issues
             recent_products = self.fetch_products(
                 database, collection,
                 filter_query=filter_query or {'is_active': True},
-                limit=count//3 + 1,
-                sort_field='updated_on',
-                sort_direction=DESCENDING
+                limit=count//3 + 1
+                # Remove sort to avoid MongoDB memory limit
             )
             samples.extend(recent_products[:count//3 + 1])
 
@@ -259,9 +257,8 @@ class MongoDBClient:
                     database, collection,
                     filter_query={**(filter_query or {}),
                                   'ratings.overall_rating': {'$gte': 4.0}},
-                    limit=count - len(samples),
-                    sort_field='ratings.overall_rating',
-                    sort_direction=DESCENDING
+                    limit=count - len(samples)
+                    # Remove sort to avoid MongoDB memory limit
                 )
                 samples.extend(rated_products)
 
@@ -347,9 +344,8 @@ class MongoDBClient:
                 database=database,
                 collection=collection,
                 filter_query=filter_query,
-                limit=limit,
-                sort_field='ratings.overall_rating',
-                sort_direction=DESCENDING
+                limit=limit
+                # Remove sort to avoid MongoDB memory limit with large collections
             )
 
         except Exception as e:

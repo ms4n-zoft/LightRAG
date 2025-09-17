@@ -7,8 +7,32 @@ from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
 from pydantic import BaseModel, Field
+from bson import ObjectId
 
 logger = logging.getLogger(__name__)
+
+
+def sanitize_mongodb_document(doc: Dict[str, Any]) -> Dict[str, Any]:
+    """Convert MongoDB ObjectIds to strings for JSON serialization"""
+    if doc is None:
+        return None
+
+    sanitized = {}
+    for key, value in doc.items():
+        if isinstance(value, ObjectId):
+            sanitized[key] = str(value)
+        elif isinstance(value, dict):
+            sanitized[key] = sanitize_mongodb_document(value)
+        elif isinstance(value, list):
+            sanitized[key] = [
+                sanitize_mongodb_document(item) if isinstance(item, dict)
+                else str(item) if isinstance(item, ObjectId)
+                else item
+                for item in value
+            ]
+        else:
+            sanitized[key] = value
+    return sanitized
 
 
 class ProductIngestionRequest(BaseModel):
@@ -19,13 +43,13 @@ class ProductIngestionRequest(BaseModel):
         default=None, description="Optional MongoDB query filter"
     )
     limit: Optional[int] = Field(
-        default=None, description="Optional limit on number of products to process"
+        default=None, description="Optional limit on number of products to process (None = process all products)"
     )
     skip: int = Field(default=0, description="Number of products to skip")
     batch_size: int = Field(
         default=25, description="Batch size for processing")
     working_dir: str = Field(
-        default="./product_rag_storage", description="Working directory for LightRAG"
+        default="./rag_storage", description="Working directory for LightRAG (same as main server)"
     )
 
     class Config:
@@ -33,11 +57,11 @@ class ProductIngestionRequest(BaseModel):
             "example": {
                 "database": "product_db",
                 "collection": "products",
-                "filter_query": {"status": "active"},
-                "limit": 8000,
+                "filter_query": {"is_active": True},
+                "limit": None,
                 "skip": 0,
                 "batch_size": 25,
-                "working_dir": "./enhanced_rag_100"
+                "working_dir": "./rag_storage"
             }
         }
 
@@ -101,20 +125,13 @@ def create_product_ingestion_routes(api_key: Optional[str] = None):
     """Create product ingestion API routes"""
     router = APIRouter(prefix="/product_ingestion", tags=["Product Ingestion"])
 
-    # Create auth dependency if API key is provided
-    if api_key:
-        from lightrag.api.auth import create_api_key_dependency
-        auth_dependency = create_api_key_dependency(api_key)
-    else:
-        def auth_dependency(): return None
-
+    # No auth dependency for webui - remove auth requirements
     # Store for running jobs
     running_jobs: Dict[str, Dict[str, Any]] = {}
 
     @router.get(
         "/stats",
-        response_model=CollectionStatsResponse,
-        dependencies=[Depends(auth_dependency)]
+        response_model=CollectionStatsResponse
     )
     async def get_collection_stats(
         database: str,
@@ -137,7 +154,7 @@ def create_product_ingestion_routes(api_key: Optional[str] = None):
             sample_product = mongodb_client.get_sample_product(
                 database, collection)
 
-            total_docs = stats.get("count", 0)
+            total_docs = stats.get("total_documents", 0)
             # Default batch size of 25
             estimated_batches = (total_docs + 24) // 25
 
@@ -147,7 +164,7 @@ def create_product_ingestion_routes(api_key: Optional[str] = None):
                 database=database,
                 collection=collection,
                 total_documents=total_docs,
-                sample_product=sample_product,
+                sample_product=sanitize_mongodb_document(sample_product),
                 estimated_batches=estimated_batches
             )
 
@@ -160,8 +177,7 @@ def create_product_ingestion_routes(api_key: Optional[str] = None):
 
     @router.post(
         "/start",
-        response_model=ProductIngestionResponse,
-        dependencies=[Depends(auth_dependency)]
+        response_model=ProductIngestionResponse
     )
     async def start_product_ingestion(
         request: ProductIngestionRequest,
@@ -202,12 +218,15 @@ def create_product_ingestion_routes(api_key: Optional[str] = None):
             try:
                 stats = service.get_collection_stats(
                     request.database, request.collection)
-                total_docs = stats.get("count", 0)
+                # Use active_products count if available, otherwise total_documents
+                total_docs = stats.get(
+                    "active_products", stats.get("total_documents", 0))
                 if request.limit:
                     total_docs = min(total_docs, request.limit)
                 estimated_batches = (
-                    total_docs + request.batch_size - 1) // request.batch_size
-            except:
+                    total_docs + request.batch_size - 1) // request.batch_size if total_docs > 0 else 0
+            except Exception as e:
+                logger.warning(f"Could not estimate job size: {e}")
                 estimated_batches = None
 
             # Store job info
@@ -244,8 +263,7 @@ def create_product_ingestion_routes(api_key: Optional[str] = None):
             )
 
     @router.get(
-        "/jobs",
-        dependencies=[Depends(auth_dependency)]
+        "/jobs"
     )
     async def list_jobs() -> Dict[str, Any]:
         """
@@ -257,8 +275,7 @@ def create_product_ingestion_routes(api_key: Optional[str] = None):
         }
 
     @router.get(
-        "/jobs/{job_id}",
-        dependencies=[Depends(auth_dependency)]
+        "/jobs/{job_id}"
     )
     async def get_job_status(job_id: str) -> Dict[str, Any]:
         """
@@ -283,7 +300,11 @@ async def run_ingestion_job(
 ):
     """Background task to run product ingestion"""
     try:
-        logger.info(f"Running product ingestion job {job_id}")
+        logger.info(f"🚀 Running product ingestion job {job_id}")
+        logger.info(f"   Database: {request.database}")
+        logger.info(f"   Collection: {request.collection}")
+        logger.info(f"   Limit: {request.limit}")
+        logger.info(f"   Working Directory: {request.working_dir}")
 
         # Run the ingestion
         results = await service.ingest_products(

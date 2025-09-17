@@ -2,6 +2,7 @@ import { HashRouter as Router, Routes, Route, useNavigate } from 'react-router-d
 import { useEffect, useState } from 'react'
 import { useAuthStore } from '@/stores/state'
 import { navigationService } from '@/services/navigation'
+import { getAuthStatus } from '@/api/lightrag'
 import { Toaster } from 'sonner'
 import App from './App'
 import LoginPage from '@/features/LoginPage'
@@ -17,7 +18,7 @@ const AppContent = () => {
     navigationService.setNavigate(navigate)
   }, [navigate])
 
-  // Token validity check
+  // Token validity and auth config check
   useEffect(() => {
 
     const checkAuth = async () => {
@@ -29,7 +30,30 @@ const AppContent = () => {
           return;
         }
 
+        // If no token, check if auth is disabled on backend
         if (!token) {
+          try {
+            const authStatus = await getAuthStatus()
+            
+            // If auth is not configured, auto-login as guest
+            if (!authStatus.auth_configured && authStatus.access_token) {
+              useAuthStore.getState().login(
+                authStatus.access_token, 
+                true, // guest mode
+                authStatus.core_version,
+                authStatus.api_version,
+                authStatus.webui_title || null,
+                authStatus.webui_description || null
+              )
+              setInitializing(false)
+              return
+            }
+          } catch (authError) {
+            console.error('Failed to check auth status:', authError)
+            // If we can't check auth status, assume auth is required
+          }
+          
+          // Auth is required, clear any existing auth state
           useAuthStore.getState().logout()
         }
       } catch (error) {

@@ -211,9 +211,13 @@ class ProductIngestionService:
     def _init_llm_and_embedding_functions(self):
         """Initialize LLM and embedding functions"""
 
-        # OpenAI LLM function
-        async def openai_llm_func(prompt, system_prompt=None, history_messages=[], **kwargs) -> str:
-            client = OpenAI(api_key=os.getenv("LLM_BINDING_API_KEY"))
+        # Azure OpenAI LLM function
+        async def azure_openai_llm_func(prompt, system_prompt=None, history_messages=[], **kwargs) -> str:
+            client = AzureOpenAI(
+                api_key=os.getenv("LLM_BINDING_API_KEY"),
+                api_version=os.getenv("AZURE_OPENAI_API_VERSION"),
+                azure_endpoint=os.getenv("LLM_BINDING_HOST"),
+            )
             messages = []
             if system_prompt:
                 messages.append({"role": "system", "content": system_prompt})
@@ -222,7 +226,7 @@ class ProductIngestionService:
             messages.append({"role": "user", "content": prompt})
 
             response = client.chat.completions.create(
-                model=os.getenv("LLM_MODEL", "gpt-4o-mini"),
+                model=os.getenv("AZURE_OPENAI_DEPLOYMENT"),
                 messages=messages,
                 temperature=kwargs.get("temperature", 0),
                 max_completion_tokens=kwargs.get("max_tokens", 1000),
@@ -243,7 +247,7 @@ class ProductIngestionService:
             embeddings = [item.embedding for item in response.data]
             return np.array(embeddings)
 
-        self.llm_func = openai_llm_func
+        self.llm_func = azure_openai_llm_func
         self.embedding_func = azure_embedding_func
 
     async def initialize_rag(self) -> LightRAG:

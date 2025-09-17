@@ -111,6 +111,48 @@
         "duplicateFile": "File name already exists in server cache"
       }
     },
+    "productIngestion": {
+      "buttonText": "Ingest Products",
+      "tooltip": "Ingest products from MongoDB database",
+      "title": "Product Ingestion",
+      "description": "Import product data from MongoDB into LightRAG for knowledge graph generation and semantic search.",
+      "database": {
+        "title": "Database Configuration",
+        "description": "Configure the MongoDB connection details",
+        "name": "Database Name",
+        "collection": "Collection Name",
+        "loadStats": "Load Statistics"
+      },
+      "stats": {
+        "title": "Collection Statistics",
+        "totalProducts": "Total Products",
+        "estimatedBatches": "Estimated Batches",
+        "batchSize": "Batch Size",
+        "estimatedTime": "Est. Time",
+        "sampleProduct": "Sample Product"
+      },
+      "processing": {
+        "title": "Processing Configuration",
+        "description": "Configure how the products will be processed",
+        "batchSize": "Batch Size",
+        "batchSizeHint": "Number of products to process per batch (1-100)",
+        "workingDir": "Working Directory",
+        "workingDirHint": "Directory where LightRAG will store processed data",
+        "infoTitle": "Processing Information",
+        "info1": "All active products will be processed (no limit)",
+        "info2": "Progress can be monitored via Pipeline Status",
+        "info3": "Large datasets will be processed in batches automatically"
+      },
+      "startButton": "Start Ingestion",
+      "success": {
+        "jobStarted": "Product ingestion job started successfully! Job ID: {{jobId}}, Estimated batches: {{estimatedBatches}}"
+      },
+      "errors": {
+        "missingFields": "Please fill in all required fields",
+        "statsLoadFailed": "Failed to load collection statistics: {{error}}",
+        "startFailed": "Failed to start product ingestion: {{error}}"
+      }
+    },
     "documentManager": {
       "title": "Document Management",
       "scanButton": "Scan",

@@ -94,9 +94,8 @@ class ProductIngestionService:
                 collection=collection,
                 filter_query=filter_query,
                 limit=limit,
-                skip=skip,
-                sort_field="updated_on",  # Process most recently updated first
-                sort_direction=-1
+                skip=skip
+                # Remove sort to avoid MongoDB memory limit with large collections
             )
         except Exception as e:
             logger.error(f"❌ Failed to fetch products: {e}")

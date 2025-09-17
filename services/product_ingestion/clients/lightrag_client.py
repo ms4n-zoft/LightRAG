@@ -26,9 +26,13 @@ class LightRAGClient:
         self.embedding_func = self._create_embedding_function()
 
     def _create_llm_function(self):
-        """Create OpenAI LLM function"""
-        async def openai_llm_func(prompt, system_prompt=None, history_messages=[], **kwargs) -> str:
-            client = OpenAI(api_key=os.getenv("LLM_BINDING_API_KEY"))
+        """Create Azure OpenAI LLM function"""
+        async def azure_openai_llm_func(prompt, system_prompt=None, history_messages=[], **kwargs) -> str:
+            client = AzureOpenAI(
+                api_key=os.getenv("LLM_BINDING_API_KEY"),
+                api_version=os.getenv("AZURE_OPENAI_API_VERSION"),
+                azure_endpoint=os.getenv("LLM_BINDING_HOST"),
+            )
             messages = []
 
             if system_prompt:
@@ -47,7 +51,7 @@ class LightRAGClient:
                 logger.debug(f"🔍 Prompt preview: {prompt[:200]}...")
 
             response = client.chat.completions.create(
-                model=os.getenv("LLM_MODEL", "gpt-5-mini"),
+                model=os.getenv("AZURE_OPENAI_DEPLOYMENT"),
                 messages=messages,
                 # Changed from 0 to 1
                 temperature=kwargs.get("temperature", 1),
@@ -82,7 +86,7 @@ class LightRAGClient:
 
             return content
 
-        return openai_llm_func
+        return azure_openai_llm_func
 
     def _create_embedding_function(self):
         """Create Azure embedding function"""
@@ -127,14 +131,18 @@ class LightRAGClient:
         )
 
         # Initialize LightRAG with Neo4j graph storage
+        # Use optimized settings that match the main server
         self.rag = LightRAG(
             working_dir=self.working_dir,
             llm_model_func=self.llm_func,
             embedding_func=embedding_func_instance,
             graph_storage="Neo4JStorage",  # Use Neo4j for knowledge graph
             log_level="INFO",
-            # Disable gleaning for faster processing (2 LLM calls instead of 4)
+            # Performance optimizations for large-scale ingestion
+            # Disable gleaning (2 LLM calls instead of 4)
             entity_extract_max_gleaning=0,
+            # Settings will be inherited from environment variables (.env)
+            # This ensures consistency with main server performance settings
         )
 
         # Initialize storages
@@ -147,19 +155,35 @@ class LightRAGClient:
 
     async def insert_text(self, text: str) -> bool:
         """Insert text into LightRAG (async)"""
+        return await self.insert_text_with_source(text, "product_ingestion")
+
+    async def insert_text_with_source(self, text: str, source_name: str) -> bool:
+        """Insert text into LightRAG with source identification (async)"""
         if not self.rag:
             raise ValueError("RAG not initialized. Call initialize() first.")
 
         try:
             logger.info(f"🔄 Starting LightRAG knowledge graph construction...")
             logger.info(f"   📄 Text length: {len(text):,} characters")
+            logger.info(f"   📂 Source: {source_name}")
             logger.info(
                 f"   🧠 This will involve multiple LLM calls for entity/relationship extraction")
             logger.info(f"   🔗 Plus embedding generation for vector search")
             logger.info(
                 f"   ⏱️  Please wait - this typically takes 1-3 minutes per batch...")
 
-            await self.rag.ainsert(text)
+            # Add timeout protection to prevent hanging
+            import asyncio
+            try:
+                # 5 minute timeout - insert with source identification
+                await asyncio.wait_for(
+                    self.rag.ainsert(text, file_paths=[source_name]),
+                    timeout=300
+                )
+            except asyncio.TimeoutError:
+                logger.error(f"⏰ LLM processing timed out after 5 minutes")
+                raise Exception(
+                    "LLM processing timeout - consider reducing text size or increasing timeout")
 
             logger.info(
                 f"🎉 Knowledge graph construction completed successfully!")

@@ -1,10 +1,11 @@
 import { defineConfig } from 'vite'
 import path from 'path'
-import { webuiPrefix } from '@/lib/constants'
 import react from '@vitejs/plugin-react-swc'
 import tailwindcss from '@tailwindcss/vite'
 
-// https://vite.dev/config/
+const webuiPrefix = '/webui/'
+
+// https://vite.dev/config/ wi
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
@@ -12,7 +13,7 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src')
     }
   },
-  // base: import.meta.env.VITE_BASE_URL || '/webui/',
+  // base: import.meta.env.VITE_BASE_URL || '/webui/',ts 
   base: webuiPrefix,
   build: {
     outDir: path.resolve(__dirname, '../lightrag/api/webui'),
@@ -57,19 +58,48 @@ export default defineConfig({
     }
   },
   server: {
-    proxy: import.meta.env.VITE_API_PROXY === 'true' && import.meta.env.VITE_API_ENDPOINTS ?
-      Object.fromEntries(
-        import.meta.env.VITE_API_ENDPOINTS.split(',').map(endpoint => [
-          endpoint,
-          {
-            target: import.meta.env.VITE_BACKEND_URL || 'http://localhost:9621',
-            changeOrigin: true,
-            rewrite: endpoint === '/api' ?
-              (path) => path.replace(/^\/api/, '') :
-              endpoint === '/docs' || endpoint === '/openapi.json' ?
-                (path) => path : undefined
-          }
-        ])
-      ) : {}
+    proxy: {
+      // Proxy all API endpoints to the backend server
+      '/health': {
+        target: 'http://localhost:9621',
+        changeOrigin: true
+      },
+      '/auth-status': {
+        target: 'http://localhost:9621',
+        changeOrigin: true
+      },
+      '/login': {
+        target: 'http://localhost:9621',
+        changeOrigin: true
+      },
+      '/documents': {
+        target: 'http://localhost:9621',
+        changeOrigin: true
+      },
+      '/graphs': {
+        target: 'http://localhost:9621',
+        changeOrigin: true
+      },
+      '/graph': {
+        target: 'http://localhost:9621',
+        changeOrigin: true
+      },
+      '/query': {
+        target: 'http://localhost:9621',
+        changeOrigin: true
+      },
+      '/product_ingestion': {
+        target: 'http://localhost:9621',
+        changeOrigin: true
+      },
+      '/docs': {
+        target: 'http://localhost:9621',
+        changeOrigin: true
+      },
+      '/openapi.json': {
+        target: 'http://localhost:9621',
+        changeOrigin: true
+      }
+    }
   }
 })

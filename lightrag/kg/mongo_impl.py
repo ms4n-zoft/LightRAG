@@ -5,6 +5,9 @@ import numpy as np
 import configparser
 import asyncio
 
+# Import certifi for TLS certificate configuration
+import certifi
+
 from typing import Any, Union, final
 
 from ..base import (
@@ -58,7 +61,8 @@ class ClientManager:
                     "MONGO_DATABASE",
                     config.get("mongodb", "database", fallback="LightRAG"),
                 )
-                client = AsyncMongoClient(uri)
+
+                client = AsyncMongoClient(uri, tlsCAFile=certifi.where())
                 db = client.get_database(database_name)
                 cls._instances["db"] = db
                 cls._instances["ref_count"] = 0
@@ -182,7 +186,8 @@ class MongoKVStorage(BaseKVStorage):
         return result
 
     async def upsert(self, data: dict[str, dict[str, Any]]) -> None:
-        logger.debug(f"[{self.workspace}] Inserting {len(data)} to {self.namespace}")
+        logger.debug(
+            f"[{self.workspace}] Inserting {len(data)} to {self.namespace}")
         if not data:
             return
 
@@ -201,7 +206,8 @@ class MongoKVStorage(BaseKVStorage):
             # Create a copy of v for $set operation, excluding create_time to avoid conflicts
             v_for_set = v.copy()
             v_for_set["_id"] = k  # Use flattened key as _id
-            v_for_set["update_time"] = current_time  # Always update update_time
+            # Always update update_time
+            v_for_set["update_time"] = current_time
 
             # Remove create_time from $set to avoid conflict with $setOnInsert
             v_for_set.pop("create_time", None)
@@ -342,7 +348,8 @@ class MongoDocStatusStorage(DocStatusStorage):
             # When workspace is empty, final_namespace equals original namespace
             self.final_namespace = self.namespace
             self.workspace = "_"
-            logger.debug(f"Final namespace (no workspace): '{self.final_namespace}'")
+            logger.debug(
+                f"Final namespace (no workspace): '{self.final_namespace}'")
 
         self._collection_name = self.final_namespace
 
@@ -380,7 +387,8 @@ class MongoDocStatusStorage(DocStatusStorage):
         return data - existing_ids
 
     async def upsert(self, data: dict[str, dict[str, Any]]) -> None:
-        logger.debug(f"[{self.workspace}] Inserting {len(data)} to {self.namespace}")
+        logger.debug(
+            f"[{self.workspace}] Inserting {len(data)} to {self.namespace}")
         if not data:
             return
         update_tasks: list[Any] = []
@@ -476,7 +484,8 @@ class MongoDocStatusStorage(DocStatusStorage):
         try:
             indexes_cursor = await self._data.list_indexes()
             existing_indexes = await indexes_cursor.to_list(length=None)
-            existing_index_names = {idx.get("name", "") for idx in existing_indexes}
+            existing_index_names = {idx.get("name", "")
+                                    for idx in existing_indexes}
 
             # Define collation configuration for Chinese pinyin sorting
             collation_config = {"locale": "zh", "numericOrdering": True}
@@ -741,7 +750,8 @@ class MongoGraphStorage(BaseGraphStorage):
             # When workspace is empty, final_namespace equals original namespace
             self.final_namespace = self.namespace
             self.workspace = "_"
-            logger.debug(f"Final namespace (no workspace): '{self.final_namespace}'")
+            logger.debug(
+                f"Final namespace (no workspace): '{self.final_namespace}'")
 
         self._collection_name = self.final_namespace
         self._edge_collection_name = f"{self._collection_name}_edges"
@@ -1212,9 +1222,11 @@ class MongoGraphStorage(BaseGraphStorage):
                 node_id = str(doc["_id"])
                 node_ids.append(node_id)
 
-            cursor = self.collection.find({"_id": {"$in": node_ids}}, {"source_ids": 0})
+            cursor = self.collection.find(
+                {"_id": {"$in": node_ids}}, {"source_ids": 0})
             async for doc in cursor:
-                result.nodes.append(self._construct_graph_node(doc["_id"], doc))
+                result.nodes.append(
+                    self._construct_graph_node(doc["_id"], doc))
 
             # As node count reaches the limit, only need to fetch the edges that directly connect to these nodes
             edge_cursor = self.edge_collection.find(
@@ -1231,7 +1243,8 @@ class MongoGraphStorage(BaseGraphStorage):
 
             async for doc in cursor:
                 node_id = str(doc["_id"])
-                result.nodes.append(self._construct_graph_node(doc["_id"], doc))
+                result.nodes.append(
+                    self._construct_graph_node(doc["_id"], doc))
 
             edge_cursor = self.edge_collection.find({})
 
@@ -1421,7 +1434,8 @@ class MongoGraphStorage(BaseGraphStorage):
         cursor = self.collection.find({"_id": {"$in": node_ids}})
 
         async for doc in cursor:
-            result.nodes.append(self._construct_graph_node(str(doc["_id"]), doc))
+            result.nodes.append(
+                self._construct_graph_node(str(doc["_id"]), doc))
 
         for edge in node_edges:
             if (
@@ -1478,7 +1492,8 @@ class MongoGraphStorage(BaseGraphStorage):
             max_nodes = self.global_config.get("max_graph_nodes", 1000)
         else:
             # Limit max_nodes to not exceed global_config max_graph_nodes
-            max_nodes = min(max_nodes, self.global_config.get("max_graph_nodes", 1000))
+            max_nodes = min(max_nodes, self.global_config.get(
+                "max_graph_nodes", 1000))
 
         result = KnowledgeGraph()
         start = time.perf_counter()
@@ -1526,7 +1541,8 @@ class MongoGraphStorage(BaseGraphStorage):
                         f"[{self.workspace}] Fallback query also failed: {str(fallback_error)}"
                     )
             else:
-                logger.error(f"[{self.workspace}] MongoDB query failed: {str(e)}")
+                logger.error(
+                    f"[{self.workspace}] MongoDB query failed: {str(e)}")
 
         return result
 
@@ -1692,7 +1708,8 @@ class MongoVectorDBStorage(BaseVectorStorage):
             # When workspace is empty, final_namespace equals original namespace
             self.final_namespace = self.namespace
             self.workspace = "_"
-            logger.debug(f"Final namespace (no workspace): '{self.final_namespace}'")
+            logger.debug(
+                f"Final namespace (no workspace): '{self.final_namespace}'")
 
         # Set index name based on workspace for backward compatibility
         if effective_workspace:
@@ -1773,7 +1790,8 @@ class MongoVectorDBStorage(BaseVectorStorage):
             )
 
     async def upsert(self, data: dict[str, dict[str, Any]]) -> None:
-        logger.debug(f"[{self.workspace}] Inserting {len(data)} to {self.namespace}")
+        logger.debug(
+            f"[{self.workspace}] Inserting {len(data)} to {self.namespace}")
         if not data:
             return
 
@@ -1790,7 +1808,7 @@ class MongoVectorDBStorage(BaseVectorStorage):
         ]
         contents = [v["content"] for v in data.values()]
         batches = [
-            contents[i : i + self._max_batch_size]
+            contents[i: i + self._max_batch_size]
             for i in range(0, len(contents), self._max_batch_size)
         ]
 
@@ -1803,7 +1821,8 @@ class MongoVectorDBStorage(BaseVectorStorage):
         update_tasks = []
         for doc in list_data:
             update_tasks.append(
-                self._data.update_one({"_id": doc["_id"]}, {"$set": doc}, upsert=True)
+                self._data.update_one({"_id": doc["_id"]}, {
+                                      "$set": doc}, upsert=True)
             )
         await asyncio.gather(*update_tasks)
 
@@ -1853,7 +1872,8 @@ class MongoVectorDBStorage(BaseVectorStorage):
                 **doc,
                 "id": doc["_id"],
                 "distance": doc.get("score", None),
-                "created_at": doc.get("created_at"),  # Include created_at field
+                # Include created_at field
+                "created_at": doc.get("created_at"),
             }
             for doc in results
         ]

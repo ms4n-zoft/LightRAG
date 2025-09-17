@@ -206,8 +206,9 @@ class BatchProcessor:
         batch_header = f"PRODUCT BATCH {batch_id} - {len(normalized_texts)} PRODUCTS\n\n"
         final_text = batch_header + combined_text
 
-        # Insert into LightRAG
-        success = await self.lightrag_client.insert_text(final_text)
+        # Insert into LightRAG with proper source identification
+        source_name = f"product_batch_{batch_id}"
+        success = await self.lightrag_client.insert_text_with_source(final_text, source_name)
         if not success:
             raise Exception(f"Failed to insert batch {batch_id} into LightRAG")
 
