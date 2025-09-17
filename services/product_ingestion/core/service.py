@@ -34,8 +34,9 @@ class ProductIngestionService:
         self.mongodb_client = MongoDBClient()
         self.lightrag_client = LightRAGClient(self.config.working_dir)
 
-        # Initialize processor
-        self.batch_processor = BatchProcessor(self.lightrag_client)
+        # Initialize processor with database connection for name resolution
+        self.batch_processor = BatchProcessor(
+            self.lightrag_client, self.mongodb_client.client.get_database('Zoftware'))
 
         logger.info(f"🚀 ProductIngestionService initialized")
         logger.info(f"   Working directory: {self.config.working_dir}")

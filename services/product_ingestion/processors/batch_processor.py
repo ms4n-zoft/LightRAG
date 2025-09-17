@@ -18,10 +18,10 @@ logger = logging.getLogger(__name__)
 class BatchProcessor:
     """Handles batch processing of products with progress tracking"""
 
-    def __init__(self, lightrag_client: LightRAGClient):
+    def __init__(self, lightrag_client: LightRAGClient, db=None):
         """Initialize batch processor"""
         self.lightrag_client = lightrag_client
-        self.metadata_extractor = MetadataExtractor()
+        self.metadata_extractor = MetadataExtractor(db)
         self.product_normalizer = RFPOptimizedNormalizer()
 
     async def process_batch(self,

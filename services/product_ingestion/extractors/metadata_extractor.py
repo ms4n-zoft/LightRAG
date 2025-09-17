@@ -5,6 +5,7 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime
 from ..models.metadata import EnhancedProductMetadata
 from ..utils.objectid_utils import ObjectIdUtils, safe_str, safe_get_oid
+from ..utils.name_resolution import NameResolver
 
 logger = logging.getLogger(__name__)
 
@@ -12,10 +13,11 @@ logger = logging.getLogger(__name__)
 class MetadataExtractor:
     """Extracts comprehensive metadata from product JSON documents"""
 
-    def __init__(self):
+    def __init__(self, db=None):
         """Initialize the metadata extractor"""
         self.category_cache = {}  # Cache for category ID to name resolution
         self.industry_cache = {}  # Cache for industry ID to name resolution
+        self.name_resolver = NameResolver(db) if db is not None else None
 
     def extract_metadata(self, product_json: Dict[str, Any]) -> EnhancedProductMetadata:
         """
@@ -51,8 +53,8 @@ class MetadataExtractor:
             updated_on = self._parse_timestamp(
                 ObjectIdUtils.extract_timestamp_field(product_json, 'updated_on'))
 
-            # Extract features using utilities with safe defaults
-            features = ObjectIdUtils.extract_feature_ids(product_json)
+            # Extract features using name resolution
+            features = self._extract_features(product_json)
             other_features = ObjectIdUtils.safe_str_list(
                 product_json.get('other_features', []))
 
@@ -73,11 +75,13 @@ class MetadataExtractor:
                 logo_url=logo_url,
                 company_website=company_website,
 
-                # Categorization using utilities
-                categories=ObjectIdUtils.extract_category_ids(product_json),
-                parent_categories=ObjectIdUtils.extract_category_ids(
-                    {'category': product_json.get('parent_categories', [])}),
-                industry=ObjectIdUtils.extract_industry_ids(product_json),
+                # Categorization with name resolution
+                categories=self._extract_category_names(
+                    product_json.get('categories', [])),
+                parent_categories=self._extract_parent_category_names(
+                    product_json.get('parent_categories', [])),
+                industry=self._extract_industry_names(
+                    product_json.get('industry', [])),
                 industry_size=ObjectIdUtils.safe_str_list(
                     product_json.get('industry_size', [])),
 
@@ -96,7 +100,8 @@ class MetadataExtractor:
                 # Features
                 features=features,
                 other_features=other_features,
-                supports=ObjectIdUtils.extract_support_ids(product_json),
+                supports=self._extract_supports(
+                    product_json.get('supports', [])),
 
                 # Ratings
                 overall_rating=ratings.get('overall_rating', 0.0),
@@ -110,9 +115,9 @@ class MetadataExtractor:
 
                 # Technical
                 integrations=integrations,
-                tech_stack=ObjectIdUtils.safe_str_list(
+                tech_stack=self._extract_techstack_names(
                     product_json.get('tech_stack', [])),
-                languages=ObjectIdUtils.safe_str_list(
+                languages=self._extract_language_names(
                     product_json.get('languages', [])),
 
                 # Company info using utilities
@@ -201,14 +206,18 @@ class MetadataExtractor:
         }
 
     def _extract_features(self, product_json: Dict[str, Any]) -> List[str]:
-        """Extract feature names from feature IDs (placeholder for now)"""
-        # TODO: If you have a features collection, resolve IDs to names here
+        """Extract feature names from feature IDs"""
         feature_ids = product_json.get('features', [])
         if not feature_ids:
             return []
 
-        # For now, return the IDs as strings - handle ObjectId properly
-        # In a real implementation, you'd resolve these from a features collection
+        # Use name resolver if available
+        if self.name_resolver:
+            feature_names = self.name_resolver.resolve_feature_ids(feature_ids)
+            if feature_names:
+                return feature_names
+
+        # Fallback to IDs as strings - handle ObjectId properly
         result = []
         for feature_id in feature_ids:
             if feature_id:
@@ -223,7 +232,14 @@ class MetadataExtractor:
         if not supports_data:
             return []
 
-        # TODO: Resolve support IDs to names if needed - handle ObjectId properly
+        # Use name resolver if available
+        if self.name_resolver:
+            support_names = self.name_resolver.resolve_support_ids(
+                supports_data)
+            if support_names:
+                return support_names
+
+        # Fallback to IDs as strings - handle ObjectId properly
         result = []
         for support in supports_data:
             if support:
@@ -238,8 +254,14 @@ class MetadataExtractor:
         if not category_data:
             return []
 
-        # TODO: If you have a categories collection, resolve IDs to names here
-        # For now, return the IDs as strings
+        # Use name resolver for sub categories if available
+        if self.name_resolver:
+            category_names = self.name_resolver.resolve_sub_category_ids(
+                category_data)
+            if category_names:
+                return category_names
+
+        # Fallback to IDs as strings
         category_names = []
         for cat in category_data:
             if isinstance(cat, dict) and '$oid' in cat:
@@ -254,7 +276,14 @@ class MetadataExtractor:
         if not industry_data:
             return []
 
-        # TODO: If you have an industries collection, resolve IDs to names here
+        # Use name resolver for parent industries if available
+        if self.name_resolver:
+            industry_names = self.name_resolver.resolve_industry_ids(
+                industry_data)
+            if industry_names:
+                return industry_names
+
+        # Fallback to IDs as strings
         industry_names = []
         for ind in industry_data:
             if isinstance(ind, dict) and '$oid' in ind:
@@ -263,6 +292,51 @@ class MetadataExtractor:
                 industry_names.append(str(ind))
 
         return industry_names
+
+    def _extract_parent_category_names(self, category_data: List[Any]) -> List[str]:
+        """Extract parent category names from parent category IDs"""
+        if not category_data:
+            return []
+
+        # Use name resolver for parent categories if available
+        if self.name_resolver:
+            category_names = self.name_resolver.resolve_parent_category_ids(
+                category_data)
+            if category_names:
+                return category_names
+
+        # Fallback to IDs as strings
+        return ObjectIdUtils.safe_str_list(category_data)
+
+    def _extract_language_names(self, language_data: List[Any]) -> List[str]:
+        """Extract language names from language IDs"""
+        if not language_data:
+            return []
+
+        # Use name resolver for languages if available
+        if self.name_resolver:
+            language_names = self.name_resolver.resolve_language_ids(
+                language_data)
+            if language_names:
+                return language_names
+
+        # Fallback to IDs as strings
+        return ObjectIdUtils.safe_str_list(language_data)
+
+    def _extract_techstack_names(self, techstack_data: List[Any]) -> List[str]:
+        """Extract technology stack names from tech stack IDs"""
+        if not techstack_data:
+            return []
+
+        # Use name resolver for tech stack if available
+        if self.name_resolver:
+            tech_names = self.name_resolver.resolve_techstack_ids(
+                techstack_data)
+            if tech_names:
+                return tech_names
+
+        # Fallback to IDs as strings
+        return ObjectIdUtils.safe_str_list(techstack_data)
 
     def _parse_timestamp(self, timestamp_data) -> Optional[datetime]:
         """Parse various timestamp formats from MongoDB"""
