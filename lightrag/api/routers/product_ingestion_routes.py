@@ -1,0 +1,321 @@
+"""API routes for product ingestion monitoring and control"""
+
+import asyncio
+import logging
+from typing import Dict, List, Any, Optional
+from datetime import datetime
+
+from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
+from pydantic import BaseModel, Field
+
+logger = logging.getLogger(__name__)
+
+
+class ProductIngestionRequest(BaseModel):
+    """Request model for product ingestion"""
+    database: str = Field(description="MongoDB database name")
+    collection: str = Field(description="MongoDB collection name")
+    filter_query: Optional[Dict[str, Any]] = Field(
+        default=None, description="Optional MongoDB query filter"
+    )
+    limit: Optional[int] = Field(
+        default=None, description="Optional limit on number of products to process"
+    )
+    skip: int = Field(default=0, description="Number of products to skip")
+    batch_size: int = Field(
+        default=25, description="Batch size for processing")
+    working_dir: str = Field(
+        default="./product_rag_storage", description="Working directory for LightRAG"
+    )
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "database": "product_db",
+                "collection": "products",
+                "filter_query": {"status": "active"},
+                "limit": 8000,
+                "skip": 0,
+                "batch_size": 25,
+                "working_dir": "./enhanced_rag_100"
+            }
+        }
+
+
+class ProductIngestionResponse(BaseModel):
+    """Response model for product ingestion"""
+    job_id: str = Field(description="Unique job identifier")
+    status: str = Field(description="Job status (started/failed)")
+    message: str = Field(description="Status message")
+    estimated_batches: Optional[int] = Field(
+        default=None, description="Estimated number of batches"
+    )
+    job_start: str = Field(description="Job start time")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "job_id": "product_ingestion_20250917_143022",
+                "status": "started",
+                "message": "Product ingestion job started successfully",
+                "estimated_batches": 320,
+                "job_start": "2025-09-17T14:30:22.123456"
+            }
+        }
+
+
+class CollectionStatsRequest(BaseModel):
+    """Request model for collection statistics"""
+    database: str = Field(description="MongoDB database name")
+    collection: str = Field(description="MongoDB collection name")
+
+
+class CollectionStatsResponse(BaseModel):
+    """Response model for collection statistics"""
+    database: str = Field(description="Database name")
+    collection: str = Field(description="Collection name")
+    total_documents: int = Field(description="Total number of documents")
+    sample_product: Optional[Dict[str, Any]] = Field(
+        default=None, description="Sample product for validation"
+    )
+    estimated_batches: int = Field(
+        description="Estimated batches for processing")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "database": "product_db",
+                "collection": "products",
+                "total_documents": 8247,
+                "sample_product": {
+                    "product_name": "Salesforce CRM",
+                    "company": "Salesforce",
+                    "categories": ["CRM", "Sales"]
+                },
+                "estimated_batches": 330
+            }
+        }
+
+
+def create_product_ingestion_routes(api_key: Optional[str] = None):
+    """Create product ingestion API routes"""
+    router = APIRouter(prefix="/product_ingestion", tags=["Product Ingestion"])
+
+    # Create auth dependency if API key is provided
+    if api_key:
+        from lightrag.api.auth import create_api_key_dependency
+        auth_dependency = create_api_key_dependency(api_key)
+    else:
+        def auth_dependency(): return None
+
+    # Store for running jobs
+    running_jobs: Dict[str, Dict[str, Any]] = {}
+
+    @router.get(
+        "/stats",
+        response_model=CollectionStatsResponse,
+        dependencies=[Depends(auth_dependency)]
+    )
+    async def get_collection_stats(
+        database: str,
+        collection: str
+    ) -> CollectionStatsResponse:
+        """
+        Get statistics about a MongoDB collection for ingestion planning.
+
+        This endpoint helps you understand the size and structure of your data
+        before starting a large batch processing job.
+        """
+        try:
+            # Import here to avoid circular imports
+            from services.product_ingestion.clients.mongodb_client import MongoDBClient
+
+            mongodb_client = MongoDBClient()
+
+            # Get collection stats
+            stats = mongodb_client.get_collection_stats(database, collection)
+            sample_product = mongodb_client.get_sample_product(
+                database, collection)
+
+            total_docs = stats.get("count", 0)
+            # Default batch size of 25
+            estimated_batches = (total_docs + 24) // 25
+
+            mongodb_client.close()
+
+            return CollectionStatsResponse(
+                database=database,
+                collection=collection,
+                total_documents=total_docs,
+                sample_product=sample_product,
+                estimated_batches=estimated_batches
+            )
+
+        except Exception as e:
+            logger.error(f"Failed to get collection stats: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to get collection statistics: {str(e)}"
+            )
+
+    @router.post(
+        "/start",
+        response_model=ProductIngestionResponse,
+        dependencies=[Depends(auth_dependency)]
+    )
+    async def start_product_ingestion(
+        request: ProductIngestionRequest,
+        background_tasks: BackgroundTasks
+    ) -> ProductIngestionResponse:
+        """
+        Start a product ingestion job with web UI monitoring.
+
+        This endpoint starts a background job that processes products from MongoDB
+        and ingests them into LightRAG. The job progress can be monitored through
+        the web UI pipeline status dialog.
+
+        For large datasets (8000+ records), the job will:
+        - Process products in configurable batches
+        - Update progress in real-time through the web UI
+        - Provide detailed error reporting
+        - Calculate ETAs and throughput metrics
+        """
+        try:
+            # Generate unique job ID
+            job_id = f"product_ingestion_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            job_start = datetime.now()
+
+            # Import here to avoid circular imports
+            from services.product_ingestion.core.service import ProductIngestionService
+            from services.product_ingestion.models.config import IngestionConfig
+
+            # Create ingestion config
+            config = IngestionConfig(
+                batch_size=request.batch_size,
+                working_dir=request.working_dir
+            )
+
+            # Create service instance
+            service = ProductIngestionService(config)
+
+            # Estimate job size for response
+            try:
+                stats = service.get_collection_stats(
+                    request.database, request.collection)
+                total_docs = stats.get("count", 0)
+                if request.limit:
+                    total_docs = min(total_docs, request.limit)
+                estimated_batches = (
+                    total_docs + request.batch_size - 1) // request.batch_size
+            except:
+                estimated_batches = None
+
+            # Store job info
+            running_jobs[job_id] = {
+                "request": request.dict(),
+                "start_time": job_start,
+                "status": "running"
+            }
+
+            # Start background task
+            background_tasks.add_task(
+                run_ingestion_job,
+                job_id,
+                service,
+                request,
+                running_jobs
+            )
+
+            logger.info(f"Started product ingestion job: {job_id}")
+
+            return ProductIngestionResponse(
+                job_id=job_id,
+                status="started",
+                message=f"Product ingestion job {job_id} started successfully",
+                estimated_batches=estimated_batches,
+                job_start=job_start.isoformat()
+            )
+
+        except Exception as e:
+            logger.error(f"Failed to start product ingestion: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to start product ingestion: {str(e)}"
+            )
+
+    @router.get(
+        "/jobs",
+        dependencies=[Depends(auth_dependency)]
+    )
+    async def list_jobs() -> Dict[str, Any]:
+        """
+        List all product ingestion jobs and their status.
+        """
+        return {
+            "jobs": running_jobs,
+            "total_jobs": len(running_jobs)
+        }
+
+    @router.get(
+        "/jobs/{job_id}",
+        dependencies=[Depends(auth_dependency)]
+    )
+    async def get_job_status(job_id: str) -> Dict[str, Any]:
+        """
+        Get detailed status of a specific product ingestion job.
+        """
+        if job_id not in running_jobs:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Job {job_id} not found"
+            )
+
+        return running_jobs[job_id]
+
+    return router
+
+
+async def run_ingestion_job(
+    job_id: str,
+    service,
+    request: ProductIngestionRequest,
+    running_jobs: Dict[str, Dict[str, Any]]
+):
+    """Background task to run product ingestion"""
+    try:
+        logger.info(f"Running product ingestion job {job_id}")
+
+        # Run the ingestion
+        results = await service.ingest_products(
+            database=request.database,
+            collection=request.collection,
+            filter_query=request.filter_query,
+            limit=request.limit,
+            skip=request.skip
+        )
+
+        # Update job status
+        running_jobs[job_id].update({
+            "status": "completed",
+            "results": results,
+            "end_time": datetime.now()
+        })
+
+        logger.info(f"Product ingestion job {job_id} completed successfully")
+
+    except Exception as e:
+        logger.error(f"Product ingestion job {job_id} failed: {e}")
+
+        # Update job status with error
+        running_jobs[job_id].update({
+            "status": "failed",
+            "error": str(e),
+            "end_time": datetime.now()
+        })
+
+    finally:
+        # Clean up service resources
+        try:
+            service.close()
+        except:
+            pass
