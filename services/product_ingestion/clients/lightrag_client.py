@@ -10,7 +10,7 @@ from lightrag import LightRAG, QueryParam
 from lightrag.utils import EmbeddingFunc
 from lightrag.kg.shared_storage import initialize_pipeline_status
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("lightrag_client")
 
 
 class LightRAGClient:
@@ -162,10 +162,7 @@ class LightRAGClient:
 
         await initialize_pipeline_status()
 
-        logger.info(
-            f"✅ LightRAG initialized with working directory: {self.working_dir}")
-        logger.info(
-            f"✅ Enhanced metadata support enabled for product ingestion")
+        logger.info(f"✅ LightRAG initialized with enhanced metadata support")
         return self.rag
 
     async def _enhance_metadata_support(self):
@@ -178,24 +175,18 @@ class LightRAGClient:
 
         # Enhance entities vector storage
         if hasattr(self.rag.entities_vdb, 'meta_fields'):
-            original_fields = self.rag.entities_vdb.meta_fields.copy()
             self.rag.entities_vdb.meta_fields.update(product_meta_fields)
-            logger.info(
-                f"🔧 Enhanced entities_vdb meta_fields: {original_fields} → {self.rag.entities_vdb.meta_fields}")
 
         # Enhance relationships vector storage
         if hasattr(self.rag.relationships_vdb, 'meta_fields'):
-            original_fields = self.rag.relationships_vdb.meta_fields.copy()
             self.rag.relationships_vdb.meta_fields.update(product_meta_fields)
-            logger.info(
-                f"🔧 Enhanced relationships_vdb meta_fields: {original_fields} → {self.rag.relationships_vdb.meta_fields}")
 
         # Enhance chunks vector storage
         if hasattr(self.rag.chunks_vdb, 'meta_fields'):
-            original_fields = self.rag.chunks_vdb.meta_fields.copy()
             self.rag.chunks_vdb.meta_fields.update(product_meta_fields)
-            logger.info(
-                f"🔧 Enhanced chunks_vdb meta_fields: {original_fields} → {self.rag.chunks_vdb.meta_fields}")
+
+        logger.info(
+            f"✅ Enhanced vector storages with {len(product_meta_fields)} product metadata fields")
 
     async def insert_text(self, text: str) -> bool:
         """Insert text into LightRAG (async)"""
@@ -206,19 +197,20 @@ class LightRAGClient:
         if not self.rag:
             raise ValueError("RAG not initialized. Call initialize() first.")
 
+        import time
+        start_time = time.time()
+
         try:
-            logger.info(f"🔄 Starting LightRAG knowledge graph construction...")
+            logger.info(f"\n{'='*80}")
+            logger.info(f"🚀 STARTING PRODUCT INGESTION")
+            logger.info(f"{'='*80}")
             logger.info(f"   📄 Text length: {len(text):,} characters")
             logger.info(f"   📂 Source: {source_name}")
-            if product_id:
-                logger.info(f"   🆔 Product ID: {product_id}")
+            if product_metadata and product_metadata.get("company"):
+                logger.info(f"   🏢 Product: {product_metadata.get('company')}")
             if category:
                 logger.info(f"   📂 Category: {category}")
-            logger.info(
-                f"   🧠 This will involve multiple LLM calls for entity/relationship extraction")
-            logger.info(f"   🔗 Plus embedding generation for vector search")
-            logger.info(
-                f"   ⏱️  Please wait - this typically takes 1-3 minutes per batch...")
+            logger.info(f"{'='*80}")
 
             # Build enhanced file path with metadata
             if product_id and category:
@@ -245,8 +237,10 @@ class LightRAGClient:
                 if category:
                     metadata["category"] = category
 
+                logger.info(f"\n🧠 STARTING LLM PROCESSING")
                 logger.info(
-                    f"   📊 Injecting metadata fields: {list(metadata.keys())}")
+                    f"   ⚡ Entity extraction → Relationship extraction → Embeddings")
+                logger.info(f"   📊 Metadata fields: {len(metadata)} injected")
 
                 # Use product_id as document ID if available, enhanced file_path for citation
                 await asyncio.wait_for(
@@ -267,8 +261,19 @@ class LightRAGClient:
                 raise Exception(
                     f"LLM processing timeout after {timeout_seconds//60} minutes - text too large for efficient processing")
 
+            end_time = time.time()
+            duration = end_time - start_time
+
+            logger.info(f"\n{'='*80}")
+            logger.info(f"🎉 PRODUCT INGESTION COMPLETED!")
+            logger.info(f"{'='*80}")
             logger.info(
-                f"🎉 Knowledge graph construction completed successfully!")
+                f"   ⏱️  Total time: {duration:.1f} seconds ({duration/60:.1f} minutes)")
+            if product_metadata and product_metadata.get("company"):
+                logger.info(f"   🏢 Product: {product_metadata.get('company')}")
+            logger.info(
+                f"   📊 Metadata fields: {len(metadata) if metadata else 0}")
+            logger.info(f"{'='*80}")
             return True
         except Exception as e:
             logger.error(f"❌ Failed to insert text: {e}")
