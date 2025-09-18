@@ -135,13 +135,17 @@ class LightRAGClient:
             func=self.embedding_func,
         )
 
-        # Initialize LightRAG with Neo4j graph storage and enhanced metadata
+        # Initialize LightRAG with same storage configuration as main server
         # Use optimized settings that match the main server
         self.rag = LightRAG(
             working_dir=self.working_dir,
             llm_model_func=self.llm_func,
             embedding_func=embedding_func_instance,
-            graph_storage="Neo4JStorage",  # Use Neo4j for knowledge graph
+            # Use same storage backends as main server
+            kv_storage="MongoKVStorage",
+            vector_storage="QdrantVectorDBStorage", 
+            graph_storage="Neo4JStorage",
+            doc_status_storage="MongoDocStatusStorage",  # Use MongoDB for document status
             log_level="INFO",
             # Performance optimizations for large-scale ingestion
             # Disable gleaning (2 LLM calls instead of 4)
@@ -242,14 +246,21 @@ class LightRAGClient:
                     f"   ⚡ Entity extraction → Relationship extraction → Embeddings")
                 logger.info(f"   📊 Metadata fields: {len(metadata)} injected")
 
-                # Use product_id as document ID if available, enhanced file_path for citation
+                # Use document pipeline for WebUI integration
+                track_id = f"products_{int(start_time)}"
+
+                # First enqueue the document in the pipeline
+                await self.rag.apipeline_enqueue_documents(
+                    input=text,
+                    ids=[product_id] if product_id else None,
+                    file_paths=[enhanced_file_path],
+                    track_id=track_id,
+                    metadata=metadata if metadata else None
+                )
+
+                # Then process it with timeout
                 await asyncio.wait_for(
-                    self.rag.ainsert(
-                        text,
-                        ids=[product_id] if product_id else None,
-                        file_paths=[enhanced_file_path],
-                        metadata=metadata if metadata else None
-                    ),
+                    self.rag.apipeline_process_enqueue_documents(),
                     timeout=timeout_seconds
                 )
             except asyncio.TimeoutError:

@@ -20,7 +20,6 @@ import {
 } from '@/api/lightrag'
 import { errorMessage } from '@/lib/utils'
 import { toast } from 'sonner'
-import { useBackendState } from '@/stores/state'
 import { DatabaseIcon, PlayIcon, RefreshCwIcon, InfoIcon } from 'lucide-react'
 
 interface ProductIngestionDialogProps {
@@ -36,7 +35,6 @@ export default function ProductIngestionDialog({ onIngestionStarted }: ProductIn
   const [database, setDatabase] = useState('Zoftware')
   const [collection, setCollection] = useState('Products')
   const [batchSize, setBatchSize] = useState(5)  // Reduced for faster processing
-  const [workingDir, setWorkingDir] = useState('./rag_storage')
   
   // Stats state
   const [stats, setStats] = useState<CollectionStatsResponse | null>(null)
@@ -83,17 +81,14 @@ export default function ProductIngestionDialog({ onIngestionStarted }: ProductIn
         limit: undefined, // Process all products - no limit
         skip: 0,
         batch_size: batchSize,
-        working_dir: workingDir
+        working_dir: './rag_storage' // Use same directory as main server
       }
 
       const response = await startProductIngestion(request)
       
-      toast.success(`Product ingestion job started successfully! Job ID: ${response.job_id}, Estimated batches: ${response.estimated_batches || 'unknown'}`)
+      toast.success(`Product ingestion started successfully! Job ID: ${response.job_id}. You can monitor progress via Pipeline Status - products will appear as documents.`)
 
-      // Reset health check timer to pick up the new job
-      useBackendState.getState().resetHealthCheckTimerDelayed(1000)
-
-      // Close dialog and notify parent
+      // Close dialog and notify parent to refresh document list
       setOpen(false)
       onIngestionStarted?.()
 
@@ -275,20 +270,6 @@ export default function ProductIngestionDialog({ onIngestionStarted }: ProductIn
                   />
                   <div className="text-xs text-gray-500">
                     Number of products to process per batch (1-100)
-                  </div>
-                </div>
-                <div className="grid gap-2">
-                  <label htmlFor="workingDir" className="text-sm font-medium">
-                    Working Directory
-                  </label>
-                  <Input
-                    id="workingDir"
-                    value={workingDir}
-                    onChange={(e) => setWorkingDir(e.target.value)}
-                    placeholder="./product_rag_storage"
-                  />
-                  <div className="text-xs text-gray-500">
-                    Directory where LightRAG will store processed data
                   </div>
                 </div>
               </div>

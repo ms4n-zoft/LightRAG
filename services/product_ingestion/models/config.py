@@ -17,7 +17,7 @@ class IngestionConfig:
     chunk_overlap: int = 150  # Good context preservation
 
     # Storage settings
-    working_dir: str = "./product_rag_storage"
+    working_dir: str = "./rag_storage"  # Use same directory as main LightRAG server
 
     # Performance tuning
     enable_progress_tracking: bool = True

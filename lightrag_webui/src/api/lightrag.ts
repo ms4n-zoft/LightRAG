@@ -823,3 +823,4 @@ export const getIngestionJobStatus = async (jobId: string): Promise<any> => {
   const response = await axiosInstance.get(`/product_ingestion/jobs/${encodeURIComponent(jobId)}`)
   return response.data
 }
+

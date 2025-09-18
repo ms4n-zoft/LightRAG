@@ -214,6 +214,9 @@ def create_product_ingestion_routes(api_key: Optional[str] = None):
             # Create service instance
             service = ProductIngestionService(config)
 
+            # Initialize LightRAG with our enhancements
+            await service.initialize_lightrag()
+
             # Estimate job size for response
             try:
                 stats = service.get_collection_stats(
@@ -277,17 +280,34 @@ def create_product_ingestion_routes(api_key: Optional[str] = None):
     @router.get(
         "/jobs/{job_id}"
     )
-    async def get_job_status(job_id: str) -> Dict[str, Any]:
-        """
-        Get detailed status of a specific product ingestion job.
-        """
+    async def get_job_status(job_id: str):
+        """Get the status of a specific ingestion job"""
         if job_id not in running_jobs:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Job {job_id} not found"
-            )
+            raise HTTPException(status_code=404, detail="Job not found")
 
-        return running_jobs[job_id]
+        return {"job_id": job_id, **running_jobs[job_id]}
+
+    @router.post("/cancel/{job_id}")
+    async def cancel_ingestion_job(job_id: str):
+        """Cancel a running ingestion job"""
+        if job_id not in running_jobs:
+            raise HTTPException(status_code=404, detail="Job not found")
+
+        job = running_jobs[job_id]
+        if job["status"] not in ["running"]:
+            raise HTTPException(
+                status_code=400, detail=f"Job is not running (status: {job['status']})")
+
+        # Update job status to cancelled
+        running_jobs[job_id].update({
+            "status": "cancelled",
+            "error": "Job cancelled by user",
+            "end_time": datetime.now()
+        })
+
+        logger.info(f"Product ingestion job {job_id} cancelled by user")
+
+        return {"message": f"Job {job_id} cancelled", "job_id": job_id}
 
     return router
 
@@ -306,23 +326,43 @@ async def run_ingestion_job(
         logger.info(f"   Limit: {request.limit}")
         logger.info(f"   Working Directory: {request.working_dir}")
 
-        # Run the ingestion
-        results = await service.ingest_products(
-            database=request.database,
-            collection=request.collection,
-            filter_query=request.filter_query,
-            limit=request.limit,
-            skip=request.skip
-        )
+        # Run the ingestion with timeout protection
+        try:
+            # 30 minute timeout for the entire ingestion job
+            timeout_seconds = 30 * 60  # 30 minutes
+            logger.info(f"   ⏰ Job timeout: {timeout_seconds//60} minutes")
 
-        # Update job status
-        running_jobs[job_id].update({
-            "status": "completed",
-            "results": results,
-            "end_time": datetime.now()
-        })
+            results = await asyncio.wait_for(
+                service.ingest_products(
+                    database=request.database,
+                    collection=request.collection,
+                    filter_query=request.filter_query,
+                    limit=request.limit,
+                    skip=request.skip
+                ),
+                timeout=timeout_seconds
+            )
 
-        logger.info(f"Product ingestion job {job_id} completed successfully")
+            # Update job status
+            running_jobs[job_id].update({
+                "status": "completed",
+                "results": results,
+                "end_time": datetime.now()
+            })
+
+            logger.info(
+                f"Product ingestion job {job_id} completed successfully")
+
+        except asyncio.TimeoutError:
+            logger.error(
+                f"Product ingestion job {job_id} timed out after {timeout_seconds//60} minutes")
+
+            # Update job status with timeout error
+            running_jobs[job_id].update({
+                "status": "failed",
+                "error": f"Job timed out after {timeout_seconds//60} minutes - likely LLM processing issue",
+                "end_time": datetime.now()
+            })
 
     except Exception as e:
         logger.error(f"Product ingestion job {job_id} failed: {e}")

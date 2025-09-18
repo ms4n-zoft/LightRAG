@@ -100,7 +100,8 @@ def sanitize_filename(filename: str, input_dir: Path) -> str:
     try:
         final_path = (input_dir / clean_name).resolve()
         if not final_path.is_relative_to(input_dir.resolve()):
-            raise HTTPException(status_code=400, detail="Unsafe filename detected")
+            raise HTTPException(
+                status_code=400, detail="Unsafe filename detected")
     except (OSError, ValueError):
         raise HTTPException(status_code=400, detail="Invalid filename")
 
@@ -122,7 +123,8 @@ class ScanResponse(BaseModel):
     message: Optional[str] = Field(
         default=None, description="Additional details about the scanning operation"
     )
-    track_id: str = Field(description="Tracking ID for monitoring scanning progress")
+    track_id: str = Field(
+        description="Tracking ID for monitoring scanning progress")
 
     class Config:
         json_schema_extra = {
@@ -146,7 +148,8 @@ class InsertTextRequest(BaseModel):
         min_length=1,
         description="The text to insert",
     )
-    file_source: str = Field(default=None, min_length=0, description="File Source")
+    file_source: str = Field(default=None, min_length=0,
+                             description="File Source")
 
     @field_validator("text", mode="after")
     @classmethod
@@ -220,7 +223,8 @@ class InsertResponse(BaseModel):
         description="Status of the operation"
     )
     message: str = Field(description="Message describing the operation result")
-    track_id: str = Field(description="Tracking ID for monitoring processing status")
+    track_id: str = Field(
+        description="Tracking ID for monitoring processing status")
 
     class Config:
         json_schema_extra = {
@@ -304,7 +308,8 @@ Attributes:
 
 
 class DeleteDocRequest(BaseModel):
-    doc_ids: List[str] = Field(..., description="The IDs of the documents to delete.")
+    doc_ids: List[str] = Field(...,
+                               description="The IDs of the documents to delete.")
     delete_file: bool = Field(
         default=False,
         description="Whether to delete the corresponding file in the upload directory.",
@@ -330,7 +335,8 @@ class DeleteDocRequest(BaseModel):
 
 
 class DeleteEntityRequest(BaseModel):
-    entity_name: str = Field(..., description="The name of the entity to delete.")
+    entity_name: str = Field(...,
+                             description="The name of the entity to delete.")
 
     @field_validator("entity_name", mode="after")
     @classmethod
@@ -341,8 +347,10 @@ class DeleteEntityRequest(BaseModel):
 
 
 class DeleteRelationRequest(BaseModel):
-    source_entity: str = Field(..., description="The name of the source entity.")
-    target_entity: str = Field(..., description="The name of the target entity.")
+    source_entity: str = Field(...,
+                               description="The name of the source entity.")
+    target_entity: str = Field(...,
+                               description="The name of the target entity.")
 
     @field_validator("source_entity", "target_entity", mode="after")
     @classmethod
@@ -355,10 +363,13 @@ class DeleteRelationRequest(BaseModel):
 class DocStatusResponse(BaseModel):
     id: str = Field(description="Document identifier")
     content_summary: str = Field(description="Summary of document content")
-    content_length: int = Field(description="Length of document content in characters")
+    content_length: int = Field(
+        description="Length of document content in characters")
     status: DocStatus = Field(description="Current processing status")
-    created_at: str = Field(description="Creation timestamp (ISO format string)")
-    updated_at: str = Field(description="Last update timestamp (ISO format string)")
+    created_at: str = Field(
+        description="Creation timestamp (ISO format string)")
+    updated_at: str = Field(
+        description="Last update timestamp (ISO format string)")
     track_id: Optional[str] = Field(
         default=None, description="Tracking ID for monitoring progress"
     )
@@ -456,8 +467,10 @@ class TrackStatusResponse(BaseModel):
     documents: List[DocStatusResponse] = Field(
         description="List of documents associated with this track_id"
     )
-    total_count: int = Field(description="Total number of documents for this track_id")
-    status_summary: Dict[str, int] = Field(description="Count of documents by status")
+    total_count: int = Field(
+        description="Total number of documents for this track_id")
+    status_summary: Dict[str, int] = Field(
+        description="Count of documents by status")
 
     class Config:
         json_schema_extra = {
@@ -613,7 +626,8 @@ class StatusCountsResponse(BaseModel):
         status_counts: Count of documents by status
     """
 
-    status_counts: Dict[str, int] = Field(description="Count of documents by status")
+    status_counts: Dict[str, int] = Field(
+        description="Count of documents by status")
 
     class Config:
         json_schema_extra = {
@@ -1201,7 +1215,8 @@ async def pipeline_enqueue_file(
                     }
                 ]
                 await rag.apipeline_enqueue_error_documents(error_files, track_id)
-                logger.error(f"Error enqueueing document {file_path.name}: {str(e)}")
+                logger.error(
+                    f"Error enqueueing document {file_path.name}: {str(e)}")
                 return False, track_id
         else:
             error_files = [
@@ -1343,7 +1358,8 @@ async def run_scanning_process(
         if new_files:
             # Process all files at once with track_id
             await pipeline_index_files(rag, new_files, track_id)
-            logger.info(f"Scanning process completed: {total_files} files Processed.")
+            logger.info(
+                f"Scanning process completed: {total_files} files Processed.")
         else:
             # No new files to index, check if there are any documents in the queue
             logger.info(
@@ -1378,7 +1394,8 @@ async def background_delete_documents(
     # Double-check pipeline status before proceeding
     async with pipeline_status_lock:
         if pipeline_status.get("busy", False):
-            logger.warning("Error: Unexpected pipeline busy state, aborting deletion.")
+            logger.warning(
+                "Error: Unexpected pipeline busy state, aborting deletion.")
             return  # Abort deletion operation
 
         # Set pipeline status to busy for deletion
@@ -1394,7 +1411,8 @@ async def background_delete_documents(
             }
         )
         # Use slice assignment to clear the list in place
-        pipeline_status["history_messages"][:] = ["Starting document deletion process"]
+        pipeline_status["history_messages"][:] = [
+            "Starting document deletion process"]
 
     try:
         # Loop through each document ID and delete them one by one
@@ -1410,7 +1428,8 @@ async def background_delete_documents(
             try:
                 result = await rag.adelete_by_doc_id(doc_id)
                 file_path = (
-                    getattr(result, "file_path", "-") if "result" in locals() else "-"
+                    getattr(result, "file_path",
+                            "-") if "result" in locals() else "-"
                 )
                 if result.status == "success":
                     successful_deletions.append(doc_id)
@@ -1468,7 +1487,8 @@ async def background_delete_documents(
                                 ):
                                     try:
                                         enqueued_file.unlink()
-                                        deleted_files.append(enqueued_file.name)
+                                        deleted_files.append(
+                                            enqueued_file.name)
                                         logger.info(
                                             f"Successfully deleted enqueued file: {enqueued_file.name}"
                                         )
@@ -1507,7 +1527,8 @@ async def background_delete_documents(
                         logger.warning(no_file_msg)
                         async with pipeline_status_lock:
                             pipeline_status["latest_message"] = no_file_msg
-                            pipeline_status["history_messages"].append(no_file_msg)
+                            pipeline_status["history_messages"].append(
+                                no_file_msg)
                 else:
                     failed_deletions.append(doc_id)
                     error_msg = f"Failed to delete {i}/{total_docs}: {doc_id}[{file_path}] - {result.message}"
@@ -1550,7 +1571,8 @@ async def background_delete_documents(
                 )
                 await rag.apipeline_process_enqueue_documents()
             except Exception as e:
-                logger.error(f"Error processing pending documents after deletion: {e}")
+                logger.error(
+                    f"Error processing pending documents after deletion: {e}")
 
 
 def create_document_routes(
@@ -1577,7 +1599,8 @@ def create_document_routes(
         track_id = generate_track_id("scan")
 
         # Start the scanning process in the background with track_id
-        background_tasks.add_task(run_scanning_process, rag, doc_manager, track_id)
+        background_tasks.add_task(
+            run_scanning_process, rag, doc_manager, track_id)
         return ScanResponse(
             status="scanning_started",
             message="Scanning process has been initiated in the background",
@@ -1610,7 +1633,8 @@ def create_document_routes(
         """
         try:
             # Sanitize filename to prevent Path Traversal attacks
-            safe_filename = sanitize_filename(file.filename, doc_manager.input_dir)
+            safe_filename = sanitize_filename(
+                file.filename, doc_manager.input_dir)
 
             if not doc_manager.is_supported_file(safe_filename):
                 raise HTTPException(
@@ -1633,7 +1657,8 @@ def create_document_routes(
             track_id = generate_track_id("upload")
 
             # Add to background tasks and get track_id
-            background_tasks.add_task(pipeline_index_file, rag, file_path, track_id)
+            background_tasks.add_task(
+                pipeline_index_file, rag, file_path, track_id)
 
             return InsertResponse(
                 status="success",
@@ -1878,7 +1903,8 @@ def create_document_routes(
                         file_path.unlink()
                         deleted_files_count += 1
                     except Exception as e:
-                        logger.error(f"Error deleting file {file_path}: {str(e)}")
+                        logger.error(
+                            f"Error deleting file {file_path}: {str(e)}")
                         file_errors_count += 1
 
             # Log file deletion results
@@ -1887,7 +1913,8 @@ def create_document_routes(
                     pipeline_status["history_messages"].append(
                         f"Deleted {deleted_files_count} files with {file_errors_count} errors"
                     )
-                    errors.append(f"Failed to delete {file_errors_count} files")
+                    errors.append(
+                        f"Failed to delete {file_errors_count} files")
                 else:
                     pipeline_status["history_messages"].append(
                         f"Successfully deleted {deleted_files_count} files"
@@ -2009,7 +2036,8 @@ def create_document_routes(
             # Ensure job_start is properly formatted as a string with timezone information
             if "job_start" in status_dict and status_dict["job_start"]:
                 # Use format_datetime to ensure consistent formatting
-                status_dict["job_start"] = format_datetime(status_dict["job_start"])
+                status_dict["job_start"] = format_datetime(
+                    status_dict["job_start"])
 
             return PipelineStatusResponse(**status_dict)
         except Exception as e:
@@ -2080,7 +2108,8 @@ def create_document_routes(
         status: Literal["deletion_started", "busy", "not_allowed"] = Field(
             description="Status of the deletion operation"
         )
-        message: str = Field(description="Message describing the operation result")
+        message: str = Field(
+            description="Message describing the operation result")
         doc_id: str = Field(description="The ID of the document to delete")
 
     @router.delete(
@@ -2296,7 +2325,8 @@ def create_document_routes(
         try:
             # Validate track_id
             if not track_id or not track_id.strip():
-                raise HTTPException(status_code=400, detail="Track ID cannot be empty")
+                raise HTTPException(
+                    status_code=400, detail="Track ID cannot be empty")
 
             track_id = track_id.strip()
 
@@ -2327,7 +2357,8 @@ def create_document_routes(
                 # Build status summary
                 # Handle both DocStatus enum and string cases for robust deserialization
                 status_key = str(doc_status.status)
-                status_summary[status_key] = status_summary.get(status_key, 0) + 1
+                status_summary[status_key] = status_summary.get(
+                    status_key, 0) + 1
 
             return TrackStatusResponse(
                 track_id=track_id,
@@ -2339,7 +2370,8 @@ def create_document_routes(
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error getting track status for {track_id}: {str(e)}")
+            logger.error(
+                f"Error getting track status for {track_id}: {str(e)}")
             logger.error(traceback.format_exc())
             raise HTTPException(status_code=500, detail=str(e))
 
@@ -2406,7 +2438,8 @@ def create_document_routes(
                 )
 
             # Calculate pagination info
-            total_pages = (total_count + request.page_size - 1) // request.page_size
+            total_pages = (total_count + request.page_size -
+                           1) // request.page_size
             has_next = request.page < total_pages
             has_prev = request.page > 1
 
