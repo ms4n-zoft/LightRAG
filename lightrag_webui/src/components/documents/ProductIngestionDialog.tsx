@@ -35,7 +35,7 @@ export default function ProductIngestionDialog({ onIngestionStarted }: ProductIn
   // Form state
   const [database, setDatabase] = useState('Zoftware')
   const [collection, setCollection] = useState('Products')
-  const [batchSize, setBatchSize] = useState(25)
+  const [batchSize, setBatchSize] = useState(5)  // Reduced for faster processing
   const [workingDir, setWorkingDir] = useState('./rag_storage')
   
   // Stats state
@@ -214,10 +214,10 @@ export default function ProductIngestionDialog({ onIngestionStarted }: ProductIn
                   </div>
                   <div className="text-center">
                     <div className="text-2xl font-bold text-orange-600">
-                      ~{Math.ceil(stats.estimated_batches * 2)}min
+                      ~{Math.ceil(stats.estimated_batches * 1.5)}min
                     </div>
                     <div className="text-sm text-gray-600">
-                      Est. Time
+                      Est. Time (Optimized)
                     </div>
                   </div>
                 </div>
@@ -268,10 +268,10 @@ export default function ProductIngestionDialog({ onIngestionStarted }: ProductIn
                   <NumberInput
                     id="batchSize"
                     value={batchSize}
-                    onValueChange={(value) => setBatchSize(value || 25)}
+                    onValueChange={(value) => setBatchSize(value || 5)}
                     min={1}
                     max={100}
-                    placeholder="25"
+                    placeholder="5"
                   />
                   <div className="text-xs text-gray-500">
                     Number of products to process per batch (1-100)

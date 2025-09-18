@@ -43,8 +43,13 @@ class LightRAGClient:
 
             # Log what type of LLM processing is happening
             task_type = "entity extraction" if "extract" in prompt.lower() else "text analysis"
+            prompt_chars = len(prompt)
+            estimated_tokens = prompt_chars // 4  # Rough estimate: 4 chars per token
             logger.info(
-                f"🧠 Calling LLM for {task_type} ({len(prompt)} chars)...")
+                f"🧠 Calling LLM for {task_type}")
+            logger.info(
+                f"   📊 Prompt size: {prompt_chars:,} chars (~{estimated_tokens:,} tokens)")
+            logger.info(f"   🔄 Processing request...")
 
             # Log a sample of the prompt to debug
             if logger.isEnabledFor(logging.DEBUG):
@@ -130,7 +135,7 @@ class LightRAGClient:
             func=self.embedding_func,
         )
 
-        # Initialize LightRAG with Neo4j graph storage
+        # Initialize LightRAG with Neo4j graph storage and enhanced metadata
         # Use optimized settings that match the main server
         self.rag = LightRAG(
             working_dir=self.working_dir,
@@ -141,24 +146,63 @@ class LightRAGClient:
             # Performance optimizations for large-scale ingestion
             # Disable gleaning (2 LLM calls instead of 4)
             entity_extract_max_gleaning=0,
+            # Enhanced metadata support for product ingestion
+            vector_db_storage_cls_kwargs={
+                "cosine_better_than_threshold": 0.2,  # Required for Qdrant
+            },
             # Settings will be inherited from environment variables (.env)
             # This ensures consistency with main server performance settings
         )
 
         # Initialize storages
         await self.rag.initialize_storages()
+
+        # Enhance vector storages with product metadata fields
+        await self._enhance_metadata_support()
+
         await initialize_pipeline_status()
 
         logger.info(
             f"✅ LightRAG initialized with working directory: {self.working_dir}")
+        logger.info(
+            f"✅ Enhanced metadata support enabled for product ingestion")
         return self.rag
+
+    async def _enhance_metadata_support(self):
+        """Enhance vector storages with additional metadata fields for product ingestion"""
+        # Define essential product metadata fields (from normalizer)
+        product_meta_fields = {
+            "product_id", "category", "weburl", "company", "company_website",
+            "category_ids", "logo_key", "logo_url"
+        }
+
+        # Enhance entities vector storage
+        if hasattr(self.rag.entities_vdb, 'meta_fields'):
+            original_fields = self.rag.entities_vdb.meta_fields.copy()
+            self.rag.entities_vdb.meta_fields.update(product_meta_fields)
+            logger.info(
+                f"🔧 Enhanced entities_vdb meta_fields: {original_fields} → {self.rag.entities_vdb.meta_fields}")
+
+        # Enhance relationships vector storage
+        if hasattr(self.rag.relationships_vdb, 'meta_fields'):
+            original_fields = self.rag.relationships_vdb.meta_fields.copy()
+            self.rag.relationships_vdb.meta_fields.update(product_meta_fields)
+            logger.info(
+                f"🔧 Enhanced relationships_vdb meta_fields: {original_fields} → {self.rag.relationships_vdb.meta_fields}")
+
+        # Enhance chunks vector storage
+        if hasattr(self.rag.chunks_vdb, 'meta_fields'):
+            original_fields = self.rag.chunks_vdb.meta_fields.copy()
+            self.rag.chunks_vdb.meta_fields.update(product_meta_fields)
+            logger.info(
+                f"🔧 Enhanced chunks_vdb meta_fields: {original_fields} → {self.rag.chunks_vdb.meta_fields}")
 
     async def insert_text(self, text: str) -> bool:
         """Insert text into LightRAG (async)"""
         return await self.insert_text_with_source(text, "product_ingestion")
 
-    async def insert_text_with_source(self, text: str, source_name: str) -> bool:
-        """Insert text into LightRAG with source identification (async)"""
+    async def insert_text_with_source(self, text: str, source_name: str, product_id: str = None, category: str = None, product_metadata: dict = None) -> bool:
+        """Insert text into LightRAG with source identification and product metadata (async)"""
         if not self.rag:
             raise ValueError("RAG not initialized. Call initialize() first.")
 
@@ -166,24 +210,62 @@ class LightRAGClient:
             logger.info(f"🔄 Starting LightRAG knowledge graph construction...")
             logger.info(f"   📄 Text length: {len(text):,} characters")
             logger.info(f"   📂 Source: {source_name}")
+            if product_id:
+                logger.info(f"   🆔 Product ID: {product_id}")
+            if category:
+                logger.info(f"   📂 Category: {category}")
             logger.info(
                 f"   🧠 This will involve multiple LLM calls for entity/relationship extraction")
             logger.info(f"   🔗 Plus embedding generation for vector search")
             logger.info(
                 f"   ⏱️  Please wait - this typically takes 1-3 minutes per batch...")
 
+            # Build enhanced file path with metadata
+            if product_id and category:
+                enhanced_file_path = f"product_id:{product_id}:category:{category}:source:{source_name}"
+            elif product_id:
+                enhanced_file_path = f"product_id:{product_id}:source:{source_name}"
+            else:
+                enhanced_file_path = source_name
+
             # Add timeout protection to prevent hanging
             import asyncio
             try:
-                # 5 minute timeout - insert with source identification
+                # 10 minute timeout for small batches (was 5 minutes)
+                timeout_seconds = 600  # 10 minutes
+                logger.info(
+                    f"   ⏰ Timeout set to {timeout_seconds//60} minutes")
+
+                # Prepare metadata for LightRAG
+                metadata = {}
+                if product_metadata:
+                    metadata.update(product_metadata)
+                if product_id:
+                    metadata["product_id"] = product_id
+                if category:
+                    metadata["category"] = category
+
+                logger.info(
+                    f"   📊 Injecting metadata fields: {list(metadata.keys())}")
+
+                # Use product_id as document ID if available, enhanced file_path for citation
                 await asyncio.wait_for(
-                    self.rag.ainsert(text, file_paths=[source_name]),
-                    timeout=300
+                    self.rag.ainsert(
+                        text,
+                        ids=[product_id] if product_id else None,
+                        file_paths=[enhanced_file_path],
+                        metadata=metadata if metadata else None
+                    ),
+                    timeout=timeout_seconds
                 )
             except asyncio.TimeoutError:
-                logger.error(f"⏰ LLM processing timed out after 5 minutes")
+                logger.error(
+                    f"⏰ LLM processing timed out after {timeout_seconds//60} minutes")
+                logger.error(f"   📊 Text size: {len(text):,} characters")
+                logger.error(
+                    f"   💡 Consider reducing batch size further if this persists")
                 raise Exception(
-                    "LLM processing timeout - consider reducing text size or increasing timeout")
+                    f"LLM processing timeout after {timeout_seconds//60} minutes - text too large for efficient processing")
 
             logger.info(
                 f"🎉 Knowledge graph construction completed successfully!")

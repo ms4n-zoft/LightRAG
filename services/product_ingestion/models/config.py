@@ -9,7 +9,7 @@ class IngestionConfig:
     """Configuration for the ingestion process"""
 
     # Batch processing settings
-    batch_size: int = 25  # Optimized for 500 products (20 batches)
+    batch_size: int = 5  # Reduced for faster LLM processing (was 25)
     max_workers: int = 3  # Conservative concurrency
 
     # Text processing settings

@@ -32,6 +32,7 @@ class RFPOptimizedNormalizer:
         # Start with clear business identity and use case
         text = f"""Product: {metadata.product_name}
 Product ID: {metadata.product_id}
+Product URL: {metadata.weburl}
 Company: {metadata.company}
 Company Website: {metadata.company_website or 'Not specified'}
 Category: {', '.join(metadata.categories) if metadata.categories else 'Software Solution'}"""
@@ -42,26 +43,22 @@ Category: {', '.join(metadata.categories) if metadata.categories else 'Software 
 
         text += f"\n\nBusiness Purpose: {metadata.description}\n\n"
 
-        # Value proposition and detailed overview for semantic search
-        if metadata.usp:
-            text += f"Key Differentiators: {metadata.usp}\n\n"
-
-        if metadata.overview:
-            text += f"Solution Overview: {metadata.overview}\n\n"
+        # Skip verbose USP and overview sections for faster LLM processing
+        # The Business Purpose above already provides the key context
 
         # Core capabilities (essential for RFP matching)
         if metadata.features or metadata.other_features:
             capabilities = []
 
-            # Add core features
+            # Add core features - REDUCED for faster LLM processing
             if metadata.features:
-                # Top 6 core features
-                capabilities.extend(metadata.features[:6])
+                # Top 4 core features (was 6)
+                capabilities.extend(metadata.features[:4])
 
             # Add key capabilities
             if metadata.other_features:
-                # Top 12 additional
-                capabilities.extend(metadata.other_features[:12])
+                # Top 6 additional (was 12)
+                capabilities.extend(metadata.other_features[:6])
 
             text += f"Capabilities: {', '.join(capabilities)}\n\n"
 
@@ -84,7 +81,8 @@ Category: {', '.join(metadata.categories) if metadata.categories else 'Software 
         # Integration ecosystem (essential for RFP technical requirements)
         if metadata.integrations:
             integration_names = [integration['name']
-                                 for integration in metadata.integrations[:8]]
+                                 # Reduced from 8 to 5
+                                 for integration in metadata.integrations[:5]]
             text += f"Integrations: {', '.join(integration_names)}\n\n"
 
         # Business model and pricing (critical for RFP budget considerations)
@@ -95,19 +93,19 @@ Category: {', '.join(metadata.categories) if metadata.categories else 'Software 
             pricing_info.append("Custom Pricing Available")
 
         text += f"{' | '.join(pricing_info)}\n"
-        text += f"Customer Rating: {metadata.overall_rating}/5.0 ({metadata.total_reviews} reviews)\n"
+        text += f"Customer Rating: {metadata.overall_rating:.2f}/5.0 ({metadata.total_reviews} reviews)\n"
 
         # Add detailed user experience ratings (important for RFP evaluation)
         ux_ratings = []
         if metadata.ease_of_use > 0:
-            ux_ratings.append(f"Ease of Use: {metadata.ease_of_use}/5.0")
+            ux_ratings.append(f"Ease of Use: {metadata.ease_of_use:.2f}/5.0")
         if metadata.ease_of_implementation > 0:
             ux_ratings.append(
-                f"Implementation: {metadata.ease_of_implementation}/5.0")
+                f"Implementation: {metadata.ease_of_implementation:.2f}/5.0")
         if metadata.customer_support > 0:
-            ux_ratings.append(f"Support: {metadata.customer_support}/5.0")
+            ux_ratings.append(f"Support: {metadata.customer_support:.2f}/5.0")
         if metadata.value_for_money > 0:
-            ux_ratings.append(f"Value: {metadata.value_for_money}/5.0")
+            ux_ratings.append(f"Value: {metadata.value_for_money:.2f}/5.0")
 
         if ux_ratings:
             text += f"User Experience: {' | '.join(ux_ratings)}\n"

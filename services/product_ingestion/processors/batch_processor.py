@@ -167,7 +167,11 @@ class BatchProcessor:
         # Insert batch into LightRAG if we have processed texts
         if batch_results["normalized_texts"]:
             try:
-                await self._insert_batch_to_lightrag(batch_results["normalized_texts"], batch_id)
+                await self._insert_batch_to_lightrag(
+                    batch_results["normalized_texts"],
+                    batch_id,
+                    batch_results["product_metadata"]
+                )
                 logger.info(
                     f"✅ Batch {batch_id} successfully inserted into LightRAG knowledge graph")
             except Exception as e:
@@ -196,21 +200,70 @@ class BatchProcessor:
 
         return batch_results
 
-    async def _insert_batch_to_lightrag(self, normalized_texts: List[str], batch_id: int):
-        """Insert batch of normalized texts into LightRAG"""
-        # Combine all texts with clear separators
-        batch_separator = f"\n\n{'='*80}\nBATCH {batch_id} PRODUCT SEPARATOR\n{'='*80}\n\n"
-        combined_text = batch_separator.join(normalized_texts)
+    async def _insert_batch_to_lightrag(self, normalized_texts: List[str], batch_id: int, product_metadata: List = None):
+        """Insert batch of normalized texts into LightRAG with progressive processing"""
 
-        # Add batch header
-        batch_header = f"PRODUCT BATCH {batch_id} - {len(normalized_texts)} PRODUCTS\n\n"
-        final_text = batch_header + combined_text
+        # For very small batches (≤3 products), process individually for better performance
+        if len(normalized_texts) <= 3:
+            logger.info(
+                f"🔄 Processing batch {batch_id} individually ({len(normalized_texts)} products)")
 
-        # Insert into LightRAG with proper source identification
-        source_name = f"product_batch_{batch_id}"
-        success = await self.lightrag_client.insert_text_with_source(final_text, source_name)
-        if not success:
-            raise Exception(f"Failed to insert batch {batch_id} into LightRAG")
+            for i, text in enumerate(normalized_texts):
+                product_header = f"PRODUCT {i+1} FROM BATCH {batch_id}\n\n"
+                final_text = product_header + text
+                source_name = f"product_batch_{batch_id}_item_{i+1}"
+
+                # Extract product info for enhanced metadata if available
+                product_id = None
+                category = None
+                extracted_metadata = None
+                if product_metadata and i < len(product_metadata):
+                    metadata = product_metadata[i]
+                    product_id = metadata.product_id
+                    category = metadata.categories[0] if metadata.categories else None
+
+                    # Extract essential metadata for vector storage (only from normalizer)
+                    extracted_metadata = {
+                        "weburl": metadata.weburl,
+                        "company": metadata.company,
+                        "company_website": metadata.company_website,
+                        "category_ids": metadata.categories,  # List of category IDs
+                        "logo_key": metadata.logo_key,
+                        "logo_url": metadata.logo_url
+                    }
+
+                success = await self.lightrag_client.insert_text_with_source(
+                    final_text, source_name, product_id, category, extracted_metadata)
+                if not success:
+                    raise Exception(
+                        f"Failed to insert product {i+1} from batch {batch_id} into LightRAG")
+
+                logger.info(
+                    f"✅ Product {i+1}/{len(normalized_texts)} from batch {batch_id} processed (ID: {product_id})")
+        else:
+            # For larger batches, use original combined approach
+            batch_separator = f"\n\n{'='*80}\nBATCH {batch_id} PRODUCT SEPARATOR\n{'='*80}\n\n"
+            combined_text = batch_separator.join(normalized_texts)
+
+            # Add batch header
+            batch_header = f"PRODUCT BATCH {batch_id} - {len(normalized_texts)} PRODUCTS\n\n"
+            final_text = batch_header + combined_text
+
+            # Insert into LightRAG with proper source identification
+            source_name = f"product_batch_{batch_id}"
+
+            # For combined batches, use first product's metadata for category
+            category = None
+            if product_metadata and len(product_metadata) > 0:
+                first_metadata = product_metadata[0]
+                category = first_metadata.categories[0] if first_metadata.categories else None
+
+            success = await self.lightrag_client.insert_text_with_source(
+                # No single product_id for combined batch
+                final_text, source_name, None, category)
+            if not success:
+                raise Exception(
+                    f"Failed to insert batch {batch_id} into LightRAG")
 
     def _generate_metadata_summary(self, metadata_list: List[EnhancedProductMetadata]) -> Dict[str, Any]:
         """Generate comprehensive metadata summary for the batch"""
