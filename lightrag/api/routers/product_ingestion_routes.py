@@ -13,11 +13,38 @@ from bson import ObjectId
 
 logger = logging.getLogger(__name__)
 
-# Add project root to Python path once at module level for efficient imports
-_current_file = Path(__file__)
-_project_root = _current_file.parent.parent.parent.parent
-if str(_project_root) not in sys.path:
-    sys.path.insert(0, str(_project_root))
+# Lazy imports to avoid circular dependencies and improve startup time
+# These are imported only when the endpoints are actually called
+_mongodb_client = None
+_product_ingestion_service = None
+_ingestion_config = None
+
+
+def _get_mongodb_client():
+    """Lazy import of MongoDBClient"""
+    global _mongodb_client
+    if _mongodb_client is None:
+        from lightrag.services.product_ingestion.clients.mongodb_client import MongoDBClient
+        _mongodb_client = MongoDBClient
+    return _mongodb_client
+
+
+def _get_product_ingestion_service():
+    """Lazy import of ProductIngestionService"""
+    global _product_ingestion_service
+    if _product_ingestion_service is None:
+        from lightrag.services.product_ingestion.core.service import ProductIngestionService
+        _product_ingestion_service = ProductIngestionService
+    return _product_ingestion_service
+
+
+def _get_ingestion_config():
+    """Lazy import of IngestionConfig"""
+    global _ingestion_config
+    if _ingestion_config is None:
+        from lightrag.services.product_ingestion.models.config import IngestionConfig
+        _ingestion_config = IngestionConfig
+    return _ingestion_config
 
 
 def sanitize_mongodb_document(doc: Dict[str, Any]) -> Dict[str, Any]:
@@ -152,9 +179,8 @@ def create_product_ingestion_routes(api_key: Optional[str] = None):
         before starting a large batch processing job.
         """
         try:
-            # Import here to avoid circular imports
-            from services.product_ingestion.clients.mongodb_client import MongoDBClient
-
+            # Use lazy import to avoid circular dependencies
+            MongoDBClient = _get_mongodb_client()
             mongodb_client = MongoDBClient()
 
             # Get collection stats
@@ -209,9 +235,9 @@ def create_product_ingestion_routes(api_key: Optional[str] = None):
             job_id = f"product_ingestion_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
             job_start = datetime.now()
 
-            # Import here to avoid circular imports
-            from services.product_ingestion.core.service import ProductIngestionService
-            from services.product_ingestion.models.config import IngestionConfig
+            # Use lazy imports to avoid circular dependencies
+            ProductIngestionService = _get_product_ingestion_service()
+            IngestionConfig = _get_ingestion_config()
 
             # Create ingestion config
             config = IngestionConfig(
