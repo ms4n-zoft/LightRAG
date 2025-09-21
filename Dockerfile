@@ -24,6 +24,7 @@ ENV PATH="/root/.bun/bin:${PATH}"
 COPY pyproject.toml .
 COPY setup.py .
 COPY lightrag/ ./lightrag/
+COPY services/ ./services/
 
 # Install dependencies
 ENV PATH="/root/.cargo/bin:${PATH}"
@@ -57,6 +58,7 @@ RUN pip install --upgrade pip setuptools wheel
 # Copy only necessary files from builder
 COPY --from=builder /root/.local /root/.local
 COPY ./lightrag ./lightrag
+COPY ./services ./services
 COPY setup.py .
 
 RUN pip install --use-pep517 ".[api]"

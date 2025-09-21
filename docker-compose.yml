@@ -12,6 +12,7 @@ services:
       - ./data/tiktoken:/app/data/tiktoken
       - ./config.ini:/app/config.ini
       - ./.env:/app/.env
+      - ./services:/app/services
     env_file:
       - .env
     environment:
