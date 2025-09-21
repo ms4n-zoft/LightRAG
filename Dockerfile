@@ -11,9 +11,14 @@ RUN apt-get update && apt-get install -y \
     curl \
     build-essential \
     pkg-config \
+    unzip \
     && rm -rf /var/lib/apt/lists/* \
     && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
     && . $HOME/.cargo/env
+
+# Install Bun for webui build
+RUN curl -fsSL https://bun.sh/install | bash
+ENV PATH="/root/.bun/bin:${PATH}"
 
 # Copy pyproject.toml and source code for dependency installation
 COPY pyproject.toml .
@@ -31,6 +36,15 @@ RUN pip install --user --no-cache-dir nano-vectordb networkx
 RUN pip install --user --no-cache-dir openai ollama tiktoken
 # Install depndencies for default document loader
 RUN pip install --user --no-cache-dir pypdf2 python-docx python-pptx openpyxl
+# Install dependencies for product ingestion (MongoDB/BSON)
+RUN pip install --user --no-cache-dir pymongo
+
+# Build the webui
+COPY lightrag_webui/ ./lightrag_webui/
+WORKDIR /app/lightrag_webui
+RUN bun install
+RUN bun run build --emptyOutDir
+WORKDIR /app
 
 # Final stage
 FROM python:3.12-slim
