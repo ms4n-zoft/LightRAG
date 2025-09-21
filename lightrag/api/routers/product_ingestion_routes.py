@@ -2,6 +2,8 @@
 
 import asyncio
 import logging
+import sys
+from pathlib import Path
 from typing import Dict, List, Any, Optional
 from datetime import datetime
 
@@ -10,6 +12,12 @@ from pydantic import BaseModel, Field
 from bson import ObjectId
 
 logger = logging.getLogger(__name__)
+
+# Add project root to Python path once at module level for efficient imports
+_current_file = Path(__file__)
+_project_root = _current_file.parent.parent.parent.parent
+if str(_project_root) not in sys.path:
+    sys.path.insert(0, str(_project_root))
 
 
 def sanitize_mongodb_document(doc: Dict[str, Any]) -> Dict[str, Any]:
