@@ -90,7 +90,7 @@ Repository = "https://github.com/HKUDS/LightRAG"
 "Bug Tracker" = "https://github.com/HKUDS/LightRAG/issues"
 
 [tool.setuptools.packages.find]
-include = ["lightrag*"]
+include = ["lightrag*", "services*"]
 
 [tool.setuptools]
 include-package-data = true
