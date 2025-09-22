@@ -30,3 +30,10 @@ class IngestionConfig:
     # Memory optimization
     clear_cache_after_batch: bool = True
     max_memory_usage_mb: Optional[int] = 2048  # 2GB limit
+
+    # Timeout and resilience settings
+    job_timeout_minutes: int = 180  # 3 hours default (was 30 minutes)
+    batch_timeout_minutes: int = 15  # 15 minutes per batch
+    enable_auto_resume: bool = True  # Enable automatic resume on timeout
+    max_consecutive_failures: int = 5  # Stop after 5 consecutive batch failures
+    checkpoint_interval: int = 10  # Save progress every 10 batches

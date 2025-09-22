@@ -360,11 +360,15 @@ async def run_ingestion_job(
         logger.info(f"   Limit: {request.limit}")
         logger.info(f"   Working Directory: {request.working_dir}")
 
-        # Run the ingestion with timeout protection
+        # Run the ingestion with configurable timeout protection
         try:
-            # 30 minute timeout for the entire ingestion job
-            timeout_seconds = 30 * 60  # 30 minutes
+            # Use configurable timeout from service config
+            timeout_seconds = service.config.job_timeout_minutes * 60
             logger.info(f"   ⏰ Job timeout: {timeout_seconds//60} minutes")
+            logger.info(
+                f"   🔄 Auto-resume enabled: {service.config.enable_auto_resume}")
+            logger.info(
+                f"   🔁 Max retries per batch: {service.config.max_retries}")
 
             results = await asyncio.wait_for(
                 service.ingest_products(
@@ -372,7 +376,8 @@ async def run_ingestion_job(
                     collection=request.collection,
                     filter_query=request.filter_query,
                     limit=request.limit,
-                    skip=request.skip
+                    skip=request.skip,
+                    resume_from_checkpoint=True  # Enable resume capability
                 ),
                 timeout=timeout_seconds
             )
@@ -390,13 +395,25 @@ async def run_ingestion_job(
         except asyncio.TimeoutError:
             logger.error(
                 f"Product ingestion job {job_id} timed out after {timeout_seconds//60} minutes")
+            logger.info(f"💡 Job can be resumed - progress has been saved")
+            logger.info(
+                f"💡 Consider increasing job_timeout_minutes in config if this persists")
 
-            # Update job status with timeout error
+            # Update job status with timeout error and resume info
             running_jobs[job_id].update({
-                "status": "failed",
-                "error": f"Job timed out after {timeout_seconds//60} minutes - likely LLM processing issue",
-                "end_time": datetime.now()
+                "status": "timeout",
+                "error": f"Job timed out after {timeout_seconds//60} minutes - progress saved, can resume",
+                "end_time": datetime.now(),
+                "can_resume": True,
+                "resume_info": "Restart the job to resume from last checkpoint"
             })
+
+        finally:
+            # Always cleanup resources
+            try:
+                service.cleanup()
+            except Exception as cleanup_error:
+                logger.warning(f"Error during cleanup: {cleanup_error}")
 
     except Exception as e:
         logger.error(f"Product ingestion job {job_id} failed: {e}")
