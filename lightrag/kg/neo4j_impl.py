@@ -72,12 +72,15 @@ class Neo4JStorage(BaseGraphStorage):
 
     async def initialize(self):
         async with get_data_init_lock():
-            URI = os.environ.get("NEO4J_URI", config.get("neo4j", "uri", fallback=None))
+            URI = os.environ.get("NEO4J_URI", config.get(
+                "neo4j", "uri", fallback=None))
             USERNAME = os.environ.get(
-                "NEO4J_USERNAME", config.get("neo4j", "username", fallback=None)
+                "NEO4J_USERNAME", config.get(
+                    "neo4j", "username", fallback=None)
             )
             PASSWORD = os.environ.get(
-                "NEO4J_PASSWORD", config.get("neo4j", "password", fallback=None)
+                "NEO4J_PASSWORD", config.get(
+                    "neo4j", "password", fallback=None)
             )
             MAX_CONNECTION_POOL_SIZE = int(
                 os.environ.get(
@@ -102,19 +105,22 @@ class Neo4JStorage(BaseGraphStorage):
             MAX_TRANSACTION_RETRY_TIME = float(
                 os.environ.get(
                     "NEO4J_MAX_TRANSACTION_RETRY_TIME",
-                    config.get("neo4j", "max_transaction_retry_time", fallback=30.0),
+                    config.get(
+                        "neo4j", "max_transaction_retry_time", fallback=30.0),
                 ),
             )
             MAX_CONNECTION_LIFETIME = float(
                 os.environ.get(
                     "NEO4J_MAX_CONNECTION_LIFETIME",
-                    config.get("neo4j", "max_connection_lifetime", fallback=300.0),
+                    config.get("neo4j", "max_connection_lifetime",
+                               fallback=300.0),
                 ),
             )
             LIVENESS_CHECK_TIMEOUT = float(
                 os.environ.get(
                     "NEO4J_LIVENESS_CHECK_TIMEOUT",
-                    config.get("neo4j", "liveness_check_timeout", fallback=30.0),
+                    config.get("neo4j", "liveness_check_timeout",
+                               fallback=30.0),
                 ),
             )
             KEEP_ALIVE = os.environ.get(
@@ -136,6 +142,9 @@ class Neo4JStorage(BaseGraphStorage):
                 max_connection_lifetime=MAX_CONNECTION_LIFETIME,
                 liveness_check_timeout=LIVENESS_CHECK_TIMEOUT,
                 keep_alive=KEEP_ALIVE,
+                # memory optimization settings
+                max_transaction_size=1000,  # limit transaction size for memory efficiency
+                resolver=None,  # disable resolver for better performance
             )
 
             # Try to connect to the database and create it if it doesn't exist
@@ -216,7 +225,8 @@ class Neo4JStorage(BaseGraphStorage):
                                 record = await check_result.single()
                                 await check_result.consume()
 
-                                index_exists = record and record.get("exists", False)
+                                index_exists = record and record.get(
+                                    "exists", False)
 
                                 if not index_exists:
                                     # Create index only if it doesn't exist
@@ -237,6 +247,30 @@ class Neo4JStorage(BaseGraphStorage):
                         logger.warning(
                             f"[{self.workspace}] Failed to create index: {str(e)}"
                         )
+
+                    # create additional performance indexes for graph traversal optimization
+                    try:
+                        async with self._driver.session(database=database) as session:
+                            # create indexes on node properties for faster filtering and sorting
+                            performance_indexes = [
+                                f"CREATE INDEX IF NOT EXISTS FOR (n:`{workspace_label}`) ON (n.name)",
+                                f"CREATE INDEX IF NOT EXISTS FOR (n:`{workspace_label}`) ON (n.entity_type)",
+                                f"CREATE INDEX IF NOT EXISTS FOR (n:`{workspace_label}`) ON (n.created_at)",
+                            ]
+
+                            for index_query in performance_indexes:
+                                try:
+                                    result = await session.run(index_query)
+                                    await result.consume()
+                                except Exception as e:
+                                    logger.debug(
+                                        f"Performance index creation skipped (may already exist): {e}")
+
+                            logger.info(
+                                f"[{self.workspace}] Created performance indexes for {workspace_label} in {database}")
+                    except Exception as e:
+                        logger.warning(
+                            f"[{self.workspace}] Failed to create performance indexes: {str(e)}")
                     break
 
     async def finalize(self):
@@ -435,8 +469,7 @@ class Neo4JStorage(BaseGraphStorage):
             try:
                 query = f"""
                     MATCH (n:`{workspace_label}` {{entity_id: $entity_id}})
-                    OPTIONAL MATCH (n)-[r]-()
-                    RETURN COUNT(r) AS degree
+                    RETURN size((n)--()) AS degree
                 """
                 result = await session.run(query, entity_id=node_id)
                 try:
@@ -479,7 +512,7 @@ class Neo4JStorage(BaseGraphStorage):
             query = f"""
                 UNWIND $node_ids AS id
                 MATCH (n:`{workspace_label}` {{entity_id: id}})
-                RETURN n.entity_id AS entity_id, count {{ (n)--() }} AS degree;
+                RETURN n.entity_id AS entity_id, size((n)--()) AS degree;
             """
             result = await session.run(query, node_ids=node_ids)
             degrees = {}
@@ -542,7 +575,8 @@ class Neo4JStorage(BaseGraphStorage):
         # Sum up degrees for each edge pair.
         edge_degrees = {}
         for src, tgt in edge_pairs:
-            edge_degrees[(src, tgt)] = degrees.get(src, 0) + degrees.get(tgt, 0)
+            edge_degrees[(src, tgt)] = degrees.get(
+                src, 0) + degrees.get(tgt, 0)
         return edge_degrees
 
     async def get_edge(
@@ -703,7 +737,7 @@ class Neo4JStorage(BaseGraphStorage):
                 try:
                     workspace_label = self._get_workspace_label()
                     query = f"""MATCH (n:`{workspace_label}` {{entity_id: $entity_id}})
-                            OPTIONAL MATCH (n)-[r]-(connected:`{workspace_label}`)
+                            MATCH (n)-[r]-(connected:`{workspace_label}`)
                             WHERE connected.entity_id IS NOT NULL
                             RETURN n, r, connected"""
                     results = await session.run(query, entity_id=source_node_id)
@@ -770,7 +804,7 @@ class Neo4JStorage(BaseGraphStorage):
             query = f"""
                 UNWIND $node_ids AS id
                 MATCH (n:`{workspace_label}` {{entity_id: id}})
-                OPTIONAL MATCH (n)-[r]-(connected:`{workspace_label}`)
+                MATCH (n)-[r]-(connected:`{workspace_label}`)
                 RETURN id AS queried_id, n.entity_id AS node_entity_id,
                        connected.entity_id AS connected_entity_id,
                        startNode(r).entity_id AS start_entity_id
@@ -796,10 +830,12 @@ class Neo4JStorage(BaseGraphStorage):
                 # Otherwise, it's an incoming edge
                 if start_entity_id == node_entity_id:
                     # Outgoing edge: (queried_node -> connected_node)
-                    edges_dict[queried_id].append((node_entity_id, connected_entity_id))
+                    edges_dict[queried_id].append(
+                        (node_entity_id, connected_entity_id))
                 else:
                     # Incoming edge: (connected_node -> queried_node)
-                    edges_dict[queried_id].append((connected_entity_id, node_entity_id))
+                    edges_dict[queried_id].append(
+                        (connected_entity_id, node_entity_id))
 
             await result.consume()  # Ensure results are fully consumed
             return edges_dict
@@ -874,7 +910,8 @@ class Neo4JStorage(BaseGraphStorage):
         properties = node_data
         entity_type = properties["entity_type"]
         if "entity_id" not in properties:
-            raise ValueError("Neo4j: node properties must contain an 'entity_id' field")
+            raise ValueError(
+                "Neo4j: node properties must contain an 'entity_id' field")
 
         try:
             async with self._driver.session(database=self._DATABASE) as session:
@@ -953,7 +990,8 @@ class Neo4JStorage(BaseGraphStorage):
 
                 await session.execute_write(execute_upsert)
         except Exception as e:
-            logger.error(f"[{self.workspace}] Error during edge upsert: {str(e)}")
+            logger.error(
+                f"[{self.workspace}] Error during edge upsert: {str(e)}")
             raise
 
     async def get_knowledge_graph(
@@ -979,7 +1017,8 @@ class Neo4JStorage(BaseGraphStorage):
             max_nodes = self.global_config.get("max_graph_nodes", 1000)
         else:
             # Limit max_nodes to not exceed global_config max_graph_nodes
-            max_nodes = min(max_nodes, self.global_config.get("max_graph_nodes", 1000))
+            max_nodes = min(max_nodes, self.global_config.get(
+                "max_graph_nodes", 1000))
 
         workspace_label = self._get_workspace_label()
         result = KnowledgeGraph()
@@ -1009,26 +1048,31 @@ class Neo4JStorage(BaseGraphStorage):
                         if count_result:
                             await count_result.consume()
 
-                    # Run main query to get nodes with highest degree
+                    # optimized query with indexes and memory-efficient operations
                     main_query = f"""
+                    // use index for faster node lookup and limit relationship counting
                     MATCH (n:`{workspace_label}`)
-                    OPTIONAL MATCH (n)-[r]-()
-                    WITH n, COALESCE(count(r), 0) AS degree
+                    // count relationships more efficiently with size() function
+                    WITH n, size((n)--()) AS degree
+                    // use index for sorting when possible, limit early
                     ORDER BY degree DESC
                     LIMIT $max_nodes
-                    WITH collect({{node: n}}) AS filtered_nodes
-                    UNWIND filtered_nodes AS node_info
-                    WITH collect(node_info.node) AS kept_nodes, filtered_nodes
-                    OPTIONAL MATCH (a)-[r]-(b)
+                    // collect nodes efficiently without unnecessary unwinding
+                    WITH collect(n) AS kept_nodes
+                    // get relationships only between kept nodes to avoid full scan
+                    MATCH (a)-[r]-(b)
                     WHERE a IN kept_nodes AND b IN kept_nodes
-                    RETURN filtered_nodes AS node_info,
+                    // return nodes and relationships separately to reduce memory usage
+                    RETURN kept_nodes AS node_info,
                            collect(DISTINCT r) AS relationships
                     """
                     result_set = None
                     try:
+                        # add query timeout to prevent long-running queries and memory issues
                         result_set = await session.run(
                             main_query,
                             {"max_nodes": max_nodes},
+                            timeout=25  # 25 second timeout for graph queries
                         )
                         record = await result_set.single()
                     finally:
@@ -1065,6 +1109,7 @@ class Neo4JStorage(BaseGraphStorage):
                                 "entity_id": node_label,
                                 "max_depth": max_depth,
                             },
+                            timeout=25  # 25 second timeout for graph traversal
                         )
                         full_record = await full_result.single()
 
@@ -1118,6 +1163,7 @@ class Neo4JStorage(BaseGraphStorage):
                                         "max_depth": max_depth,
                                         "max_nodes": max_nodes,
                                     },
+                                    timeout=25  # 25 second timeout for graph traversal
                                 )
                                 record = await result_set.single()
                             finally:
@@ -1164,7 +1210,8 @@ class Neo4JStorage(BaseGraphStorage):
                     )
 
             except neo4jExceptions.ClientError as e:
-                logger.warning(f"[{self.workspace}] APOC plugin error: {str(e)}")
+                logger.warning(
+                    f"[{self.workspace}] APOC plugin error: {str(e)}")
                 if node_label != "*":
                     logger.warning(
                         f"[{self.workspace}] Neo4j: falling back to basic Cypher recursive search..."
@@ -1265,7 +1312,8 @@ class Neo4JStorage(BaseGraphStorage):
                 results = await session.run(query, entity_id=current_node.id)
 
                 # Get all records and release database connection
-                records = await results.fetch(1000)  # Max neighbor nodes we can handle
+                # Max neighbor nodes we can handle
+                records = await results.fetch(1000)
                 await results.consume()  # Ensure results are consumed
 
                 # Process all neighbors - capture all edges but only queue unvisited nodes
@@ -1295,7 +1343,8 @@ class Neo4JStorage(BaseGraphStorage):
                             )
 
                             # Sort source_id and target_id to ensure (A,B) and (B,A) are treated as the same edge
-                            sorted_pair = tuple(sorted([current_node.id, target_id]))
+                            sorted_pair = tuple(
+                                sorted([current_node.id, target_id]))
 
                             # Check if the same edge already exists (considering undirectedness)
                             if sorted_pair not in visited_edge_pairs:
@@ -1314,7 +1363,8 @@ class Neo4JStorage(BaseGraphStorage):
                                 if current_depth < max_depth:
                                     # Add node to queue with incremented depth
                                     # Edge is already added to result, so we pass None as edge
-                                    queue.append((target_node, None, current_depth + 1))
+                                    queue.append(
+                                        (target_node, None, current_depth + 1))
                                 else:
                                     # At max depth, we've already added the edge but we don't add the node
                                     # This prevents adding nodes beyond max_depth to the result
@@ -1396,14 +1446,16 @@ class Neo4JStorage(BaseGraphStorage):
             DETACH DELETE n
             """
             result = await tx.run(query, entity_id=node_id)
-            logger.debug(f"[{self.workspace}] Deleted node with label '{node_id}'")
+            logger.debug(
+                f"[{self.workspace}] Deleted node with label '{node_id}'")
             await result.consume()  # Ensure result is fully consumed
 
         try:
             async with self._driver.session(database=self._DATABASE) as session:
                 await session.execute_write(_do_delete)
         except Exception as e:
-            logger.error(f"[{self.workspace}] Error during node deletion: {str(e)}")
+            logger.error(
+                f"[{self.workspace}] Error during node deletion: {str(e)}")
             raise
 
     @retry(
@@ -1471,7 +1523,8 @@ class Neo4JStorage(BaseGraphStorage):
                 async with self._driver.session(database=self._DATABASE) as session:
                     await session.execute_write(_do_delete_edge)
             except Exception as e:
-                logger.error(f"[{self.workspace}] Error during edge deletion: {str(e)}")
+                logger.error(
+                    f"[{self.workspace}] Error during edge deletion: {str(e)}")
                 raise
 
     async def get_all_nodes(self) -> list[dict]:
