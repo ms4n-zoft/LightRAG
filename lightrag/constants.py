@@ -39,12 +39,12 @@ DEFAULT_ENTITY_TYPES = [
 # Separator for graph fields
 GRAPH_FIELD_SEP = "<SEP>"
 
-# Query and retrieval configuration defaults
-DEFAULT_TOP_K = 40
-DEFAULT_CHUNK_TOP_K = 20
+# Query and retrieval configuration defaults - optimized for performance
+DEFAULT_TOP_K = 20  # reduced from 40 for faster entity retrieval
+DEFAULT_CHUNK_TOP_K = 10  # reduced from 20 for faster chunk retrieval
 DEFAULT_MAX_ENTITY_TOKENS = 6000
 DEFAULT_MAX_RELATION_TOKENS = 8000
-DEFAULT_MAX_TOTAL_TOKENS = 30000
+DEFAULT_MAX_TOTAL_TOKENS = 15000  # reduced from 30000 for faster processing
 DEFAULT_COSINE_THRESHOLD = 0.2
 DEFAULT_RELATED_CHUNK_NUMBER = 5
 DEFAULT_KG_CHUNK_PICK_METHOD = "VECTOR"
@@ -66,7 +66,8 @@ DEFAULT_MAX_ASYNC = 4  # Default maximum async operations
 DEFAULT_MAX_PARALLEL_INSERT = 2  # Default maximum parallel insert operations
 
 # Embedding configuration defaults
-DEFAULT_EMBEDDING_FUNC_MAX_ASYNC = 8  # Default max async for embedding functions
+# Default max async for embedding functions
+DEFAULT_EMBEDDING_FUNC_MAX_ASYNC = 8
 DEFAULT_EMBEDDING_BATCH_NUM = 10  # Default batch size for embedding computations
 
 # Gunicorn worker timeout

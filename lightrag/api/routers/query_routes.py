@@ -229,7 +229,8 @@ def create_query_routes(rag, api_key: Optional[str] = None, top_k: int = 60):
                     "Cache-Control": "no-cache",
                     "Connection": "keep-alive",
                     "Content-Type": "application/x-ndjson",
-                    "X-Accel-Buffering": "no",  # Ensure proper handling of streaming response when proxied by Nginx
+                    # Ensure proper handling of streaming response when proxied by Nginx
+                    "X-Accel-Buffering": "no",
                 },
             )
         except Exception as e:
@@ -261,7 +262,8 @@ def create_query_routes(rag, api_key: Optional[str] = None, top_k: int = 60):
                          with status code 500 and detail containing the exception message.
         """
         try:
-            param = request.to_query_params(False)  # No streaming for data endpoint
+            # No streaming for data endpoint
+            param = request.to_query_params(False)
             response = await rag.aquery_data(request.query, param=param)
 
             # The aquery_data method returns a dict with entities, relationships, chunks, and metadata
