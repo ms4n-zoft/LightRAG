@@ -300,7 +300,7 @@ class MongoKVStorage(BaseKVStorage):
 
         if operations:
             await retry_with_backoff(
-                lambda: self._data.bulk_write(operations, max_time_ms=15000),
+                lambda: self._data.bulk_write(operations),
                 max_retries=2,
                 base_delay=0.5
             )
@@ -482,7 +482,7 @@ class MongoDocStatusStorage(DocStatusStorage):
 
         if operations:
             await retry_with_backoff(
-                lambda: self._data.bulk_write(operations, max_time_ms=15000),
+                lambda: self._data.bulk_write(operations),
                 max_retries=2,
                 base_delay=0.5
             )
@@ -490,7 +490,7 @@ class MongoDocStatusStorage(DocStatusStorage):
     async def get_status_counts(self) -> dict[str, int]:
         """Get counts of documents in each status"""
         pipeline = [{"$group": {"_id": "$status", "count": {"$sum": 1}}}]
-        cursor = await self._data.aggregate(pipeline, allowDiskUse=True, max_time_ms=10000)
+        cursor = await self._data.aggregate(pipeline, allowDiskUse=True)
         result = await cursor.to_list()
         counts = {}
         for doc in result:
@@ -718,7 +718,7 @@ class MongoDocStatusStorage(DocStatusStorage):
             query_filter["status"] = status_filter.value
 
         # Get total count
-        total_count = await self._data.count_documents(query_filter, max_time_ms=10000)
+        total_count = await self._data.count_documents(query_filter)
 
         # Calculate skip value
         skip = (page - 1) * page_size
@@ -772,7 +772,7 @@ class MongoDocStatusStorage(DocStatusStorage):
             Dictionary mapping status names to counts, including 'all' field
         """
         pipeline = [{"$group": {"_id": "$status", "count": {"$sum": 1}}}]
-        cursor = await self._data.aggregate(pipeline, allowDiskUse=True, max_time_ms=10000)
+        cursor = await self._data.aggregate(pipeline, allowDiskUse=True)
         result = await cursor.to_list()
 
         counts = {}

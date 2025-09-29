@@ -283,7 +283,7 @@ class Neo4JStorage(BaseGraphStorage):
         await self.finalize()
 
     async def index_done_callback(self) -> None:
-        # Noe4J handles persistence automatically
+        # neo4j handles persistence automatically
         pass
 
     async def has_node(self, node_id: str) -> bool:
@@ -467,7 +467,8 @@ class Neo4JStorage(BaseGraphStorage):
             try:
                 query = f"""
                     MATCH (n:`{workspace_label}` {{entity_id: $entity_id}})
-                    RETURN size((n)--()) AS degree
+                    OPTIONAL MATCH (n)-[r]-()
+                    RETURN COUNT(r) AS degree
                 """
                 result = await session.run(query, entity_id=node_id)
                 try:
@@ -510,7 +511,8 @@ class Neo4JStorage(BaseGraphStorage):
             query = f"""
                 UNWIND $node_ids AS id
                 MATCH (n:`{workspace_label}` {{entity_id: id}})
-                RETURN n.entity_id AS entity_id, size((n)--()) AS degree;
+                OPTIONAL MATCH (n)-[r]-()
+                RETURN n.entity_id AS entity_id, COUNT(r) AS degree;
             """
             result = await session.run(query, node_ids=node_ids)
             degrees = {}
@@ -1004,7 +1006,7 @@ class Neo4JStorage(BaseGraphStorage):
         Args:
             node_label: Label of the starting node, * means all nodes
             max_depth: Maximum depth of the subgraph, Defaults to 3
-            max_nodes: Maxiumu nodes to return by BFS, Defaults to 1000
+            max_nodes: Maximum nodes to return by BFS, Defaults to 1000
 
         Returns:
             KnowledgeGraph object containing nodes and edges, with an is_truncated flag
@@ -1050,8 +1052,9 @@ class Neo4JStorage(BaseGraphStorage):
                     main_query = f"""
                     // use index for faster node lookup and limit relationship counting
                     MATCH (n:`{workspace_label}`)
-                    // count relationships more efficiently with size() function
-                    WITH n, size((n)--()) AS degree
+                    // count relationships more efficiently with COUNT function
+                    OPTIONAL MATCH (n)-[r]-()
+                    WITH n, COUNT(r) AS degree
                     // use index for sorting when possible, limit early
                     ORDER BY degree DESC
                     LIMIT $max_nodes
