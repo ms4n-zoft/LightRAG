@@ -142,8 +142,6 @@ class Neo4JStorage(BaseGraphStorage):
                 max_connection_lifetime=MAX_CONNECTION_LIFETIME,
                 liveness_check_timeout=LIVENESS_CHECK_TIMEOUT,
                 keep_alive=KEEP_ALIVE,
-                # memory optimization settings
-                max_transaction_size=1000,  # limit transaction size for memory efficiency
                 resolver=None,  # disable resolver for better performance
             )
 
