@@ -5,6 +5,7 @@ from dataclasses import dataclass
 import numpy as np
 import hashlib
 import uuid
+import random
 from ..utils import logger
 from ..base import BaseVectorStorage
 from ..kg.shared_storage import get_data_init_lock, get_storage_lock
@@ -18,6 +19,25 @@ from qdrant_client import QdrantClient, models  # type: ignore
 
 config = configparser.ConfigParser()
 config.read("config.ini", "utf-8")
+
+
+async def retry_with_backoff(func, max_retries=3, base_delay=1.0, max_delay=60.0):
+    """Retry function with exponential backoff for Qdrant operations"""
+    for attempt in range(max_retries + 1):
+        try:
+            return await func()
+        except Exception as e:
+            if attempt == max_retries:
+                logger.error(
+                    f"❌ Qdrant operation failed after {max_retries} retries: {e}")
+                raise
+
+            # Calculate delay with exponential backoff and jitter
+            delay = min(base_delay * (2 ** attempt) +
+                        random.uniform(0, 1), max_delay)
+            logger.warning(
+                f"⚠️ Qdrant operation failed (attempt {attempt + 1}/{max_retries + 1}), retrying in {delay:.2f}s: {e}")
+            await asyncio.sleep(delay)
 
 
 def compute_mdhash_id_for_qdrant(
@@ -34,7 +54,8 @@ def compute_mdhash_id_for_qdrant(
         raise ValueError("Content must not be empty.")
 
     # Use the hash value of the content to create a UUID.
-    hashed_content = hashlib.sha256((prefix + content).encode("utf-8")).digest()
+    hashed_content = hashlib.sha256(
+        (prefix + content).encode("utf-8")).digest()
     generated_uuid = uuid.UUID(bytes=hashed_content[:16], version=4)
 
     # Return the UUID according to the specified format.
@@ -45,7 +66,8 @@ def compute_mdhash_id_for_qdrant(
     elif style == "urn":
         return f"urn:uuid:{generated_uuid}"
     else:
-        raise ValueError("Invalid style. Choose from 'simple', 'hyphenated', or 'urn'.")
+        raise ValueError(
+            "Invalid style. Choose from 'simple', 'hyphenated', or 'urn'.")
 
 
 @final
@@ -112,7 +134,8 @@ class QdrantVectorDBStorage(BaseVectorStorage):
             # When workspace is empty, final_namespace equals original namespace
             self.final_namespace = self.namespace
             self.workspace = "_"
-            logger.debug(f"Final namespace (no workspace): '{self.final_namespace}'")
+            logger.debug(
+                f"Final namespace (no workspace): '{self.final_namespace}'")
 
         kwargs = self.global_config.get("vector_db_storage_cls_kwargs", {})
         cosine_threshold = kwargs.get("cosine_better_than_threshold")
@@ -138,16 +161,34 @@ class QdrantVectorDBStorage(BaseVectorStorage):
                 if self._client is None:
                     self._client = QdrantClient(
                         url=os.environ.get(
-                            "QDRANT_URL", config.get("qdrant", "uri", fallback=None)
+                            "QDRANT_URL", config.get(
+                                "qdrant", "uri", fallback=None)
                         ),
                         api_key=os.environ.get(
                             "QDRANT_API_KEY",
                             config.get("qdrant", "apikey", fallback=None),
                         ),
+                        # Connection optimization
+                        timeout=60,  # 60 second timeout for all operations
+                        prefer_grpc=False,  # Start with HTTP, gRPC may not be supported on cloud
+                        # To test gRPC: change to prefer_grpc=True and check logs for errors
+                        grpc_port=6334,  # Default gRPC port
+                        https=True,  # Enable HTTPS for cloud Qdrant
                     )
                     logger.debug(
                         f"[{self.workspace}] QdrantClient created successfully"
                     )
+
+                    # Test connection with health check
+                    try:
+                        # Simple health check - get collections info
+                        collections = self._client.get_collections()
+                        logger.info(
+                            f"✅ Qdrant connection health check successful - {len(collections.collections)} collections found")
+                    except Exception as e:
+                        logger.error(
+                            f"❌ Qdrant connection health check failed: {e}")
+                        raise
 
                 # Create collection if not exists
                 QdrantVectorDBStorage.create_collection_if_not_exist(
@@ -169,7 +210,8 @@ class QdrantVectorDBStorage(BaseVectorStorage):
                 raise
 
     async def upsert(self, data: dict[str, dict[str, Any]]) -> None:
-        logger.debug(f"[{self.workspace}] Inserting {len(data)} to {self.namespace}")
+        logger.debug(
+            f"[{self.workspace}] Inserting {len(data)} to {self.namespace}")
         if not data:
             return
 
@@ -187,7 +229,7 @@ class QdrantVectorDBStorage(BaseVectorStorage):
         ]
         contents = [v["content"] for v in data.values()]
         batches = [
-            contents[i : i + self._max_batch_size]
+            contents[i: i + self._max_batch_size]
             for i in range(0, len(contents), self._max_batch_size)
         ]
 
@@ -206,8 +248,13 @@ class QdrantVectorDBStorage(BaseVectorStorage):
                 )
             )
 
-        results = self._client.upsert(
-            collection_name=self.final_namespace, points=list_points, wait=True
+        # Use async upsert with retry logic for better performance
+        results = await retry_with_backoff(
+            lambda: self._client.upsert(
+                collection_name=self.final_namespace, points=list_points, wait=False
+            ),
+            max_retries=2,
+            base_delay=0.5
         )
         return results
 
@@ -215,20 +262,33 @@ class QdrantVectorDBStorage(BaseVectorStorage):
         self, query: str, top_k: int, query_embedding: list[float] = None
     ) -> list[dict[str, Any]]:
         if query_embedding is not None:
+            # Use provided embedding to avoid recomputation
             embedding = query_embedding
         else:
+            # Only compute embedding if not provided
             embedding_result = await self.embedding_func(
                 [query], _priority=5
             )  # higher priority for query
             embedding = embedding_result[0]
 
-        results = self._client.search(
-            collection_name=self.final_namespace,
-            query_vector=embedding,
-            limit=top_k,
-            with_payload=True,
-            score_threshold=self.cosine_better_than_threshold,
-        )
+        # Add timeout protection and retry logic for vector searches
+        try:
+            results = await retry_with_backoff(
+                lambda: self._client.search(
+                    collection_name=self.final_namespace,
+                    query_vector=embedding,
+                    limit=top_k,
+                    with_payload=True,
+                    score_threshold=self.cosine_better_than_threshold,
+                    timeout=60,  # 60 second timeout
+                ),
+                max_retries=2,
+                base_delay=0.5
+            )
+        except Exception as e:
+            logger.error(
+                f"[{self.workspace}] Qdrant search failed after retries: {e}")
+            return []  # Return empty results on failure
 
         # logger.debug(f"[{self.workspace}] query result: {results}")
 
@@ -278,7 +338,8 @@ class QdrantVectorDBStorage(BaseVectorStorage):
         """
         try:
             # Generate the entity ID
-            entity_id = compute_mdhash_id_for_qdrant(entity_name, prefix="ent-")
+            entity_id = compute_mdhash_id_for_qdrant(
+                entity_name, prefix="ent-")
             # logger.debug(
             #     f"[{self.workspace}] Attempting to delete entity {entity_name} with ID {entity_id}"
             # )
@@ -295,7 +356,8 @@ class QdrantVectorDBStorage(BaseVectorStorage):
                 f"[{self.workspace}] Successfully deleted entity {entity_name}"
             )
         except Exception as e:
-            logger.error(f"[{self.workspace}] Error deleting entity {entity_name}: {e}")
+            logger.error(
+                f"[{self.workspace}] Error deleting entity {entity_name}: {e}")
 
     async def delete_entity_relation(self, entity_name: str) -> None:
         """Delete all relations associated with an entity
@@ -479,7 +541,8 @@ class QdrantVectorDBStorage(BaseVectorStorage):
                 exists = False
                 if hasattr(self._client, "collection_exists"):
                     try:
-                        exists = self._client.collection_exists(self.final_namespace)
+                        exists = self._client.collection_exists(
+                            self.final_namespace)
                     except Exception:
                         exists = False
                 else:
