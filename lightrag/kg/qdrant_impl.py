@@ -25,7 +25,7 @@ async def retry_with_backoff(func, max_retries=3, base_delay=1.0, max_delay=60.0
     """Retry function with exponential backoff for Qdrant operations"""
     for attempt in range(max_retries + 1):
         try:
-            return await func()
+            return func()  # do not await since Qdrant methods are synchronous
         except Exception as e:
             if attempt == max_retries:
                 logger.error(
