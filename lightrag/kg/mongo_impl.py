@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 import numpy as np
 import configparser
 import asyncio
+import random
 
 # Import certifi for TLS certificate configuration
 import certifi
@@ -41,6 +42,25 @@ config.read("config.ini", "utf-8")
 GRAPH_BFS_MODE = os.getenv("MONGO_GRAPH_BFS_MODE", "bidirectional")
 
 
+async def retry_with_backoff(func, max_retries=3, base_delay=1.0, max_delay=60.0):
+    """Retry function with exponential backoff for MongoDB operations"""
+    for attempt in range(max_retries + 1):
+        try:
+            return await func()
+        except Exception as e:
+            if attempt == max_retries:
+                logger.error(
+                    f"❌ MongoDB operation failed after {max_retries} retries: {e}")
+                raise
+
+            # Calculate delay with exponential backoff and jitter
+            delay = min(base_delay * (2 ** attempt) +
+                        random.uniform(0, 1), max_delay)
+            logger.warning(
+                f"⚠️ MongoDB operation failed (attempt {attempt + 1}/{max_retries + 1}), retrying in {delay:.2f}s: {e}")
+            await asyncio.sleep(delay)
+
+
 class ClientManager:
     _instances = {"db": None, "ref_count": 0}
     _lock = asyncio.Lock()
@@ -62,7 +82,31 @@ class ClientManager:
                     config.get("mongodb", "database", fallback="LightRAG"),
                 )
 
-                client = AsyncMongoClient(uri, tlsCAFile=certifi.where())
+                client = AsyncMongoClient(
+                    uri,
+                    tlsCAFile=certifi.where(),
+                    maxPoolSize=50,  # Maximum connections in pool
+                    minPoolSize=5,   # Minimum connections to keep open
+                    maxIdleTimeMS=30000,  # Close idle connections after 30s
+                    # Timeout configuration
+                    serverSelectionTimeoutMS=5000,  # 5s server selection timeout
+                    connectTimeoutMS=10000,  # 10s connection timeout
+                    socketTimeoutMS=20000,  # 20s socket timeout
+                    # Retry configuration
+                    retryWrites=True,  # Enable retry for write operations
+                    retryReads=True,   # Enable retry for read operations
+                )
+
+                # Test connection with health check
+                try:
+                    await client.admin.command('ping')
+                    logger.info(
+                        "✅ MongoDB connection pool initialized successfully")
+                except Exception as e:
+                    logger.error(
+                        f"❌ MongoDB connection health check failed: {e}")
+                    raise
+
                 db = client.get_database(database_name)
                 cls._instances["db"] = db
                 cls._instances["ref_count"] = 0
@@ -76,7 +120,34 @@ class ClientManager:
                 if db is cls._instances["db"]:
                     cls._instances["ref_count"] -= 1
                     if cls._instances["ref_count"] == 0:
+                        # Log connection pool status before cleanup
+                        logger.debug(
+                            f"📊 MongoDB connection pool: {cls._instances['ref_count']} active connections")
                         cls._instances["db"] = None
+                    else:
+                        logger.debug(
+                            f"📊 MongoDB connection pool: {cls._instances['ref_count']} active connections")
+
+    @classmethod
+    async def get_connection_stats(cls) -> dict:
+        """Get connection pool statistics for monitoring"""
+        async with cls._lock:
+            if cls._instances["db"] is not None:
+                try:
+                    # Get server status for connection monitoring
+                    server_info = await cls._instances["db"].client.admin.command("serverStatus")
+                    return {
+                        "active_connections": cls._instances["ref_count"],
+                        "server_version": server_info.get("version", "unknown"),
+                        "uptime_seconds": server_info.get("uptime", 0),
+                        "connections_current": server_info.get("connections", {}).get("current", 0),
+                        "connections_available": server_info.get("connections", {}).get("available", 0),
+                    }
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to get MongoDB connection stats: {e}")
+                    return {"active_connections": cls._instances["ref_count"], "error": str(e)}
+            return {"active_connections": 0, "status": "no_connection"}
 
 
 @final
@@ -148,7 +219,7 @@ class MongoKVStorage(BaseKVStorage):
 
     async def get_by_id(self, id: str) -> dict[str, Any] | None:
         # Unified handling for flattened keys
-        doc = await self._data.find_one({"_id": id})
+        doc = await self._data.find_one({"_id": id}, max_time_ms=5000)
         if doc:
             # Ensure time fields are present, provide default values for old data
             doc.setdefault("create_time", 0)
@@ -156,12 +227,14 @@ class MongoKVStorage(BaseKVStorage):
         return doc
 
     async def get_by_ids(self, ids: list[str]) -> list[dict[str, Any]]:
-        cursor = self._data.find({"_id": {"$in": ids}})
+        cursor = self._data.find({"_id": {"$in": ids}}, max_time_ms=10000)
         docs = await cursor.to_list()
-        # Ensure time fields are present for all documents
+        # Only set defaults for documents that actually need them
         for doc in docs:
-            doc.setdefault("create_time", 0)
-            doc.setdefault("update_time", 0)
+            if "create_time" not in doc:
+                doc["create_time"] = 0
+            if "update_time" not in doc:
+                doc["update_time"] = 0
         return docs
 
     async def filter_keys(self, keys: set[str]) -> set[str]:
@@ -226,7 +299,11 @@ class MongoKVStorage(BaseKVStorage):
             )
 
         if operations:
-            await self._data.bulk_write(operations)
+            await retry_with_backoff(
+                lambda: self._data.bulk_write(operations, max_time_ms=15000),
+                max_retries=2,
+                base_delay=0.5
+            )
 
     async def index_done_callback(self) -> None:
         # Mongo handles persistence automatically
@@ -246,7 +323,7 @@ class MongoKVStorage(BaseKVStorage):
             ids = list(ids)
 
         try:
-            result = await self._data.delete_many({"_id": {"$in": ids}})
+            result = await self._data.delete_many({"_id": {"$in": ids}}, max_time_ms=10000)
             logger.info(
                 f"[{self.workspace}] Deleted {result.deleted_count} documents from {self.namespace}"
             )
@@ -375,10 +452,10 @@ class MongoDocStatusStorage(DocStatusStorage):
                 self._data = None
 
     async def get_by_id(self, id: str) -> Union[dict[str, Any], None]:
-        return await self._data.find_one({"_id": id})
+        return await self._data.find_one({"_id": id}, max_time_ms=5000)
 
     async def get_by_ids(self, ids: list[str]) -> list[dict[str, Any]]:
-        cursor = self._data.find({"_id": {"$in": ids}})
+        cursor = self._data.find({"_id": {"$in": ids}}, max_time_ms=10000)
         return await cursor.to_list()
 
     async def filter_keys(self, data: set[str]) -> set[str]:
@@ -391,21 +468,29 @@ class MongoDocStatusStorage(DocStatusStorage):
             f"[{self.workspace}] Inserting {len(data)} to {self.namespace}")
         if not data:
             return
-        update_tasks: list[Any] = []
+
+        # Use bulk_write for better performance
+        operations = []
         for k, v in data.items():
             # Ensure chunks_list field exists and is an array
             if "chunks_list" not in v:
                 v["chunks_list"] = []
-            data[k]["_id"] = k
-            update_tasks.append(
-                self._data.update_one({"_id": k}, {"$set": v}, upsert=True)
+            v["_id"] = k
+            operations.append(
+                UpdateOne({"_id": k}, {"$set": v}, upsert=True)
             )
-        await asyncio.gather(*update_tasks)
+
+        if operations:
+            await retry_with_backoff(
+                lambda: self._data.bulk_write(operations, max_time_ms=15000),
+                max_retries=2,
+                base_delay=0.5
+            )
 
     async def get_status_counts(self) -> dict[str, int]:
         """Get counts of documents in each status"""
         pipeline = [{"$group": {"_id": "$status", "count": {"$sum": 1}}}]
-        cursor = await self._data.aggregate(pipeline, allowDiskUse=True)
+        cursor = await self._data.aggregate(pipeline, allowDiskUse=True, max_time_ms=10000)
         result = await cursor.to_list()
         counts = {}
         for doc in result:
@@ -416,7 +501,7 @@ class MongoDocStatusStorage(DocStatusStorage):
         self, status: DocStatus
     ) -> dict[str, DocProcessingStatus]:
         """Get all documents with a specific status"""
-        cursor = self._data.find({"status": status.value})
+        cursor = self._data.find({"status": status.value}, max_time_ms=15000)
         result = await cursor.to_list()
         processed_result = {}
         for doc in result:
@@ -434,7 +519,7 @@ class MongoDocStatusStorage(DocStatusStorage):
         self, track_id: str
     ) -> dict[str, DocProcessingStatus]:
         """Get all documents with a specific track_id"""
-        cursor = self._data.find({"track_id": track_id})
+        cursor = self._data.find({"track_id": track_id}, max_time_ms=10000)
         result = await cursor.to_list()
         processed_result = {}
         for doc in result:
@@ -633,7 +718,7 @@ class MongoDocStatusStorage(DocStatusStorage):
             query_filter["status"] = status_filter.value
 
         # Get total count
-        total_count = await self._data.count_documents(query_filter)
+        total_count = await self._data.count_documents(query_filter, max_time_ms=10000)
 
         # Calculate skip value
         skip = (page - 1) * page_size
@@ -646,7 +731,7 @@ class MongoDocStatusStorage(DocStatusStorage):
         if sort_field == "file_path":
             # Use Chinese collation for pinyin sorting
             cursor = (
-                self._data.find(query_filter)
+                self._data.find(query_filter, max_time_ms=15000)
                 .sort(sort_criteria)
                 .collation({"locale": "zh", "numericOrdering": True})
                 .skip(skip)
@@ -655,7 +740,7 @@ class MongoDocStatusStorage(DocStatusStorage):
         else:
             # Use default sorting for other fields
             cursor = (
-                self._data.find(query_filter)
+                self._data.find(query_filter, max_time_ms=15000)
                 .sort(sort_criteria)
                 .skip(skip)
                 .limit(page_size)
@@ -687,7 +772,7 @@ class MongoDocStatusStorage(DocStatusStorage):
             Dictionary mapping status names to counts, including 'all' field
         """
         pipeline = [{"$group": {"_id": "$status", "count": {"$sum": 1}}}]
-        cursor = await self._data.aggregate(pipeline, allowDiskUse=True)
+        cursor = await self._data.aggregate(pipeline, allowDiskUse=True, max_time_ms=10000)
         result = await cursor.to_list()
 
         counts = {}
