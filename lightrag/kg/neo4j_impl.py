@@ -1096,9 +1096,7 @@ class Neo4JStorage(BaseGraphStorage):
                     }})
                     YIELD nodes, relationships
                     WITH nodes, relationships, size(nodes) AS total_nodes
-                    UNWIND nodes AS node
-                    WITH collect({{node: node}}) AS node_info, relationships, total_nodes
-                    RETURN node_info, relationships, total_nodes
+                    RETURN nodes AS node_info, relationships, total_nodes
                     """
 
                     # Try to get full result
@@ -1151,9 +1149,7 @@ class Neo4JStorage(BaseGraphStorage):
                                 bfs: true
                             }})
                             YIELD nodes, relationships
-                            UNWIND nodes AS node
-                            WITH collect({{node: node}}) AS node_info, relationships
-                            RETURN node_info, relationships
+                            RETURN nodes AS node_info, relationships
                             """
                             result_set = None
                             try:
@@ -1175,9 +1171,12 @@ class Neo4JStorage(BaseGraphStorage):
                             await full_result.consume()
 
                 if record:
-                    # Handle nodes (compatible with multi-label cases)
-                    for node_info in record["node_info"]:
-                        node = node_info["node"]
+                    # Handle nodes (optimized structure - direct nodes)
+                    for node in record["node_info"]:
+                        # skip null nodes
+                        if node is None:
+                            continue
+
                         node_id = node.id
                         if node_id not in seen_nodes:
                             result.nodes.append(
@@ -1191,10 +1190,19 @@ class Neo4JStorage(BaseGraphStorage):
 
                     # Handle relationships (including direction information)
                     for rel in record["relationships"]:
+                        # skip null relationships
+                        if rel is None:
+                            continue
+
                         edge_id = rel.id
                         if edge_id not in seen_edges:
                             start = rel.start_node
                             end = rel.end_node
+
+                            # skip if start or end nodes are null
+                            if start is None or end is None:
+                                continue
+
                             result.edges.append(
                                 KnowledgeGraphEdge(
                                     id=f"{edge_id}",
