@@ -2400,6 +2400,7 @@ async def kg_query(
             )
 
     # Build context (normal flow)
+    context_start = time.time()
     context = await _build_query_context(
         query,
         ll_keywords_str,
@@ -2411,6 +2412,8 @@ async def kg_query(
         query_param,
         chunks_vdb,
     )
+    context_end = time.time()
+    logger.info(f"context retrieval time: {context_end - context_start:.2f}s")
 
     if query_param.only_need_context and not query_param.only_need_prompt:
         return context if context is not None else PROMPTS["fail_response"]
@@ -2439,13 +2442,26 @@ async def kg_query(
         f"[kg_query] Sending to LLM: {len_of_prompts:,} tokens (Query: {len(tokenizer.encode(query))}, System: {len(tokenizer.encode(sys_prompt))})"
     )
 
-    response = await use_model_func(
-        query,
-        system_prompt=sys_prompt,
-        history_messages=query_param.conversation_history,
-        enable_cot=True,
-        stream=query_param.stream,
-    )
+    llm_start = time.time()
+    logger.info(f"starting llm call with {len_of_prompts:,} tokens")
+    try:
+        response = await use_model_func(
+            query,
+            system_prompt=sys_prompt,
+            history_messages=query_param.conversation_history,
+            enable_cot=True,
+            stream=query_param.stream,
+        )
+        llm_end = time.time()
+        logger.info(f"llm generation completed in {llm_end - llm_start:.2f}s")
+        logger.info(
+            f"llm response type: {type(response).__name__}, length: {len(str(response)) if response else 'None'}")
+    except Exception as e:
+        llm_end = time.time()
+        logger.error(
+            f"llm generation failed after {llm_end - llm_start:.2f}s: {str(e)}")
+        logger.error(f"llm error type: {type(e).__name__}")
+        raise
     if isinstance(response, str) and len(response) > len(sys_prompt):
         response = (
             response.replace(sys_prompt, "")
@@ -2484,6 +2500,7 @@ async def kg_query(
             ),
         )
 
+    logger.info(f"kg_query completed successfully, returning response")
     return response
 
 
@@ -4200,7 +4217,11 @@ async def naive_query(
 
     tokenizer: Tokenizer = global_config["tokenizer"]
 
+    context_start = time.time()
     chunks = await _get_vector_context(query, chunks_vdb, query_param, None)
+    context_end = time.time()
+    logger.info(
+        f"naive context retrieval time: {context_end - context_start:.2f}s")
 
     if chunks is None or len(chunks) == 0:
         # Build empty raw data for consistency
@@ -4343,13 +4364,25 @@ async def naive_query(
         f"[naive_query] Sending to LLM: {len_of_prompts:,} tokens (Query: {len(tokenizer.encode(query))}, System: {len(tokenizer.encode(sys_prompt))})"
     )
 
-    response = await use_model_func(
-        query,
-        system_prompt=sys_prompt,
-        history_messages=query_param.conversation_history,
-        enable_cot=True,
-        stream=query_param.stream,
-    )
+    llm_start = time.time()
+    logger.info(f"starting naive llm call with {len_of_prompts:,} tokens")
+    try:
+        response = await use_model_func(
+            query,
+            system_prompt=sys_prompt,
+            history_messages=query_param.conversation_history,
+            enable_cot=True,
+            stream=query_param.stream,
+        )
+        llm_end = time.time()
+        logger.info(
+            f"naive llm generation completed in {llm_end - llm_start:.2f}s")
+    except Exception as e:
+        llm_end = time.time()
+        logger.error(
+            f"naive llm generation failed after {llm_end - llm_start:.2f}s: {str(e)}")
+        logger.error(f"naive llm error type: {type(e).__name__}")
+        raise
 
     if isinstance(response, str) and len(response) > len(sys_prompt):
         response = (

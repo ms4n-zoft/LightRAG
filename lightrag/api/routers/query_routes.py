@@ -4,6 +4,8 @@ This module contains all query-related routes for the LightRAG API.
 
 import json
 import logging
+import time
+import asyncio
 from typing import Any, Dict, List, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -14,6 +16,22 @@ from pydantic import BaseModel, Field, field_validator
 from ascii_colors import trace_exception
 
 router = APIRouter(tags=["query"])
+
+
+async def with_timeout(coro, timeout_seconds: int = 300, operation_name: str = "operation"):
+    """Execute a coroutine with timeout handling"""
+    try:
+        result = await asyncio.wait_for(coro, timeout=timeout_seconds)
+        return result
+    except asyncio.TimeoutError:
+        logging.error(f"{operation_name} timed out after {timeout_seconds}s")
+        raise HTTPException(
+            status_code=504,
+            detail=f"{operation_name} timed out after {timeout_seconds} seconds"
+        )
+    except Exception as e:
+        logging.error(f"{operation_name} failed: {str(e)}")
+        raise
 
 
 class QueryRequest(BaseModel):
@@ -170,18 +188,39 @@ def create_query_routes(rag, api_key: Optional[str] = None, top_k: int = 60):
             HTTPException: Raised when an error occurs during the request handling process,
                        with status code 500 and detail containing the exception message.
         """
+        start_time = time.time()
         try:
             param = request.to_query_params(False)
-            response = await rag.aquery(request.query, param=param)
+
+            # time context retrieval and llm generation
+            context_start = time.time()
+            logging.info(f"starting query: {request.query[:100]}...")
+            response = await with_timeout(
+                rag.aquery(request.query, param=param),
+                timeout_seconds=300,
+                operation_name="query"
+            )
+            context_end = time.time()
+
+            total_time = time.time() - start_time
+            context_time = context_end - context_start
+
+            logging.info(
+                f"query completed - total: {total_time:.2f}s, context+llm: {context_time:.2f}s")
 
             # If response is a string (e.g. cache hit), return directly
             if isinstance(response, str):
+                logging.info(
+                    f"returning string response, length: {len(response)}")
                 return QueryResponse(response=response)
 
             if isinstance(response, dict):
                 result = json.dumps(response, indent=2)
+                logging.info(f"returning dict response, length: {len(result)}")
                 return QueryResponse(response=result)
             else:
+                logging.info(
+                    f"returning other response type: {type(response).__name__}")
                 return QueryResponse(response=str(response))
         except Exception as e:
             trace_exception(e)
@@ -199,9 +238,25 @@ def create_query_routes(rag, api_key: Optional[str] = None, top_k: int = 60):
         Returns:
             StreamingResponse: A streaming response containing the RAG query results.
         """
+        start_time = time.time()
         try:
             param = request.to_query_params(True)
-            response = await rag.aquery(request.query, param=param)
+
+            # time context retrieval and llm generation
+            context_start = time.time()
+            logging.info(f"starting stream query: {request.query[:100]}...")
+            response = await with_timeout(
+                rag.aquery(request.query, param=param),
+                timeout_seconds=300,
+                operation_name="stream query"
+            )
+            context_end = time.time()
+
+            total_time = time.time() - start_time
+            context_time = context_end - context_start
+
+            logging.info(
+                f"query/stream completed - total: {total_time:.2f}s, context+llm: {context_time:.2f}s")
 
             from fastapi.responses import StreamingResponse
 
@@ -261,10 +316,26 @@ def create_query_routes(rag, api_key: Optional[str] = None, top_k: int = 60):
             HTTPException: Raised when an error occurs during the request handling process,
                          with status code 500 and detail containing the exception message.
         """
+        start_time = time.time()
         try:
             # No streaming for data endpoint
             param = request.to_query_params(False)
-            response = await rag.aquery_data(request.query, param=param)
+
+            # time context retrieval only (no llm generation)
+            context_start = time.time()
+            logging.info(f"starting data query: {request.query[:100]}...")
+            response = await with_timeout(
+                rag.aquery_data(request.query, param=param),
+                timeout_seconds=300,
+                operation_name="data query"
+            )
+            context_end = time.time()
+
+            total_time = time.time() - start_time
+            context_time = context_end - context_start
+
+            logging.info(
+                f"query/data timing - total: {total_time:.2f}s, context: {context_time:.2f}s")
 
             # The aquery_data method returns a dict with entities, relationships, chunks, and metadata
             if isinstance(response, dict):
