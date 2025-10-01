@@ -29,11 +29,11 @@ export default function QuerySettings() {
   const defaultValues = useMemo(() => ({
     mode: 'mix' as QueryMode,
     response_type: 'Multiple Paragraphs',
-    top_k: 40,
-    chunk_top_k: 20,
+    top_k: 20,
+    chunk_top_k: 10,
     max_entity_tokens: 6000,
     max_relation_tokens: 8000,
-    max_total_tokens: 30000
+    max_total_tokens: 15000
   }), [])
 
   const handleReset = useCallback((key: keyof typeof defaultValues) => {
@@ -179,7 +179,7 @@ export default function QuerySettings() {
                   onBlur={(e) => {
                     const value = e.target.value
                     if (value === '' || isNaN(parseInt(value))) {
-                      handleChange('top_k', 40)
+                      handleChange('top_k', 20)
                     }
                   }}
                   min={1}
