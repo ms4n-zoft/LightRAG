@@ -58,7 +58,7 @@ class ProductMetadata:
 @dataclass
 class IngestionConfig:
     """Configuration for the ingestion process"""
-    batch_size: int = 50
+    batch_size: int = 1
     max_workers: int = 5
     chunk_size: int = 1000
     chunk_overlap: int = 200
@@ -469,7 +469,7 @@ async def main():
 
     # Configuration
     config = IngestionConfig(
-        batch_size=20,  # Smaller batches for testing
+        batch_size=1,  # process one product at a time
         working_dir="./product_rag_test"
     )
 

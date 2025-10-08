@@ -34,7 +34,7 @@ export default function ProductIngestionDialog({ onIngestionStarted }: ProductIn
   // Form state
   const [database, setDatabase] = useState('Zoftware')
   const [collection, setCollection] = useState('Products')
-  const [batchSize, setBatchSize] = useState(5)  // Reduced for faster processing
+  const [batchSize, setBatchSize] = useState(1)  // process one product at a time
   
   // Stats state
   const [stats, setStats] = useState<CollectionStatsResponse | null>(null)
@@ -263,10 +263,10 @@ export default function ProductIngestionDialog({ onIngestionStarted }: ProductIn
                   <NumberInput
                     id="batchSize"
                     value={batchSize}
-                    onValueChange={(value) => setBatchSize(value || 5)}
+                    onValueChange={(value) => setBatchSize(value || 1)}
                     min={1}
                     max={100}
-                    placeholder="5"
+                    placeholder="1"
                   />
                   <div className="text-xs text-gray-500">
                     Number of products to process per batch (1-100)
