@@ -85,8 +85,8 @@ class ClientManager:
                 client = AsyncMongoClient(
                     uri,
                     tlsCAFile=certifi.where(),
-                    maxPoolSize=50,  # Maximum connections in pool
-                    minPoolSize=5,   # Minimum connections to keep open
+                    maxPoolSize=3,   # Maximum connections in pool
+                    minPoolSize=1,   # Minimum connections to keep open
                     maxIdleTimeMS=30000,  # Close idle connections after 30s
                     # Timeout configuration
                     serverSelectionTimeoutMS=5000,  # 5s server selection timeout
