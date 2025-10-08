@@ -112,8 +112,8 @@ class QdrantVectorDBStorage(BaseVectorStorage):
         if qdrant_workspace and qdrant_workspace.strip():
             # Use environment variable value, overriding the passed workspace parameter
             effective_workspace = qdrant_workspace.strip()
-            logger.info(
-                f"Using QDRANT_WORKSPACE environment variable: '{effective_workspace}' (overriding passed workspace: '{self.workspace}')"
+            logger.debug(
+                f"using QDRANT_WORKSPACE environment variable: '{effective_workspace}' (overriding passed workspace: '{self.workspace}')"
             )
         else:
             # Use the workspace parameter passed during initialization

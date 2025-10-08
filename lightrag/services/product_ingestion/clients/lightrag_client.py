@@ -136,16 +136,34 @@ class LightRAGClient:
         )
 
         # Initialize LightRAG with same storage configuration as main server
-        # Use optimized settings that match the main server
+        # Use EXACTLY the same defaults as main server (api/config.py)
+        from lightrag.utils import get_env_value
+        from lightrag.api.config import DefaultRAGStorageConfig
+
+        kv_storage = get_env_value(
+            "LIGHTRAG_KV_STORAGE", DefaultRAGStorageConfig.KV_STORAGE)
+        doc_status_storage = get_env_value(
+            "LIGHTRAG_DOC_STATUS_STORAGE", DefaultRAGStorageConfig.DOC_STATUS_STORAGE)
+        graph_storage = get_env_value(
+            "LIGHTRAG_GRAPH_STORAGE", DefaultRAGStorageConfig.GRAPH_STORAGE)
+        vector_storage = get_env_value(
+            "LIGHTRAG_VECTOR_STORAGE", DefaultRAGStorageConfig.VECTOR_STORAGE)
+
+        logger.info(f"📦 Product ingestion using storage backends:")
+        logger.info(f"   - KV Storage: {kv_storage}")
+        logger.info(f"   - Doc Status Storage: {doc_status_storage}")
+        logger.info(f"   - Graph Storage: {graph_storage}")
+        logger.info(f"   - Vector Storage: {vector_storage}")
+
         self.rag = LightRAG(
             working_dir=self.working_dir,
             llm_model_func=self.llm_func,
             embedding_func=embedding_func_instance,
-            # Use same storage backends as main server
-            kv_storage="MongoKVStorage",
-            vector_storage="QdrantVectorDBStorage", 
-            graph_storage="Neo4JStorage",
-            doc_status_storage="MongoDocStatusStorage",  # Use MongoDB for document status
+            # Use same storage backends as main server from environment variables
+            kv_storage=kv_storage,
+            vector_storage=vector_storage,
+            graph_storage=graph_storage,
+            doc_status_storage=doc_status_storage,
             log_level="INFO",
             # Performance optimizations for large-scale ingestion
             # Disable gleaning (2 LLM calls instead of 4)

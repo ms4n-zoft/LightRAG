@@ -75,7 +75,8 @@ class RedisConnectionManager:
                     socket_connect_timeout=SOCKET_CONNECT_TIMEOUT,
                 )
                 cls._pool_refs[redis_url] = 0
-                logger.info(f"Created shared Redis connection pool for {redis_url}")
+                logger.info(
+                    f"Created shared Redis connection pool for {redis_url}")
 
             # Increment reference count
             cls._pool_refs[redis_url] += 1
@@ -103,7 +104,8 @@ class RedisConnectionManager:
                             f"Closed Redis connection pool for {redis_url} (no more references)"
                         )
                     except Exception as e:
-                        logger.error(f"Error closing Redis pool for {redis_url}: {e}")
+                        logger.error(
+                            f"Error closing Redis pool for {redis_url}: {e}")
                     finally:
                         del cls._pools[redis_url]
                         del cls._pool_refs[redis_url]
@@ -132,8 +134,8 @@ class RedisKVStorage(BaseKVStorage):
         if redis_workspace and redis_workspace.strip():
             # Use environment variable value, overriding the passed workspace parameter
             effective_workspace = redis_workspace.strip()
-            logger.info(
-                f"Using REDIS_WORKSPACE environment variable: '{effective_workspace}' (overriding passed workspace: '{self.workspace}')"
+            logger.debug(
+                f"using REDIS_WORKSPACE environment variable: '{effective_workspace}' (overriding passed workspace: '{self.workspace}')"
             )
         else:
             # Use the workspace parameter passed during initialization
@@ -154,10 +156,12 @@ class RedisKVStorage(BaseKVStorage):
             # When workspace is empty, final_namespace equals original namespace
             self.final_namespace = self.namespace
             self.workspace = "_"
-            logger.debug(f"Final namespace (no workspace): '{self.final_namespace}'")
+            logger.debug(
+                f"Final namespace (no workspace): '{self.final_namespace}'")
 
         self._redis_url = os.environ.get(
-            "REDIS_URI", config.get("redis", "uri", fallback="redis://localhost:6379")
+            "REDIS_URI", config.get(
+                "redis", "uri", fallback="redis://localhost:6379")
         )
         self._pool = None
         self._redis = None
@@ -194,7 +198,8 @@ class RedisKVStorage(BaseKVStorage):
                     )
                     self._initialized = True
             except Exception as e:
-                logger.error(f"[{self.workspace}] Failed to connect to Redis: {e}")
+                logger.error(
+                    f"[{self.workspace}] Failed to connect to Redis: {e}")
                 # Clean up on connection failure
                 await self.close()
                 raise
@@ -243,7 +248,8 @@ class RedisKVStorage(BaseKVStorage):
                     f"[{self.workspace}] Closed Redis connection for {self.namespace}"
                 )
             except Exception as e:
-                logger.error(f"[{self.workspace}] Error closing Redis connection: {e}")
+                logger.error(
+                    f"[{self.workspace}] Error closing Redis connection: {e}")
             finally:
                 self._redis = None
 
@@ -276,7 +282,8 @@ class RedisKVStorage(BaseKVStorage):
                     return result
                 return None
             except json.JSONDecodeError as e:
-                logger.error(f"[{self.workspace}] JSON decode error for id {id}: {e}")
+                logger.error(
+                    f"[{self.workspace}] JSON decode error for id {id}: {e}")
                 return None
 
     @redis_retry
@@ -301,7 +308,8 @@ class RedisKVStorage(BaseKVStorage):
 
                 return processed_results
             except json.JSONDecodeError as e:
-                logger.error(f"[{self.workspace}] JSON decode error in batch get: {e}")
+                logger.error(
+                    f"[{self.workspace}] JSON decode error in batch get: {e}")
                 return [None] * len(ids)
 
     async def get_all(self) -> dict[str, Any]:
@@ -312,8 +320,17 @@ class RedisKVStorage(BaseKVStorage):
         """
         async with self._get_redis_connection() as redis:
             try:
-                # Get all keys for this namespace
-                keys = await redis.keys(f"{self.final_namespace}:*")
+                # Use SCAN instead of KEYS (required for AWS Valkey Serverless)
+                # SCAN may return duplicates, so use a set for deduplication
+                keys = set()
+                cursor = 0
+                pattern = f"{self.final_namespace}:*"
+
+                while True:
+                    cursor, batch_keys = await redis.scan(cursor, match=pattern, count=100)
+                    keys.update(batch_keys)  # set.update() for deduplication
+                    if cursor == 0:
+                        break
 
                 if not keys:
                     return {}
@@ -357,7 +374,8 @@ class RedisKVStorage(BaseKVStorage):
                 pipe.exists(f"{self.final_namespace}:{key}")
             results = await pipe.execute()
 
-            existing_ids = {keys_list[i] for i, exists in enumerate(results) if exists}
+            existing_ids = {keys_list[i]
+                            for i, exists in enumerate(results) if exists}
             return set(keys) - existing_ids
 
     @redis_retry
@@ -400,7 +418,8 @@ class RedisKVStorage(BaseKVStorage):
                 await pipe.execute()
 
             except json.JSONDecodeError as e:
-                logger.error(f"[{self.workspace}] JSON decode error during upsert: {e}")
+                logger.error(
+                    f"[{self.workspace}] JSON decode error during upsert: {e}")
                 raise
 
     async def index_done_callback(self) -> None:
@@ -477,8 +496,17 @@ class RedisKVStorage(BaseKVStorage):
         from lightrag.utils import generate_cache_key
 
         async with self._get_redis_connection() as redis:
-            # Get all keys for this namespace
-            keys = await redis.keys(f"{self.final_namespace}:*")
+            # Use SCAN instead of KEYS (required for AWS Valkey Serverless)
+            # SCAN may return duplicates, so use a set for deduplication
+            keys = set()
+            cursor = 0
+            pattern = f"{self.final_namespace}:*"
+
+            while True:
+                cursor, batch_keys = await redis.scan(cursor, match=pattern, count=100)
+                keys.update(batch_keys)  # set.update() for deduplication
+                if cursor == 0:
+                    break
 
             if not keys:
                 return
@@ -531,7 +559,8 @@ class RedisKVStorage(BaseKVStorage):
                 # Create new flattened keys
                 for cache_hash, cache_entry in nested_data.items():
                     cache_type = cache_entry.get("cache_type", "extract")
-                    flattened_key = generate_cache_key(mode, cache_type, cache_hash)
+                    flattened_key = generate_cache_key(
+                        mode, cache_type, cache_hash)
                     full_key = f"{self.final_namespace}:{flattened_key}"
                     pipe.set(full_key, json.dumps(cache_entry))
                     migration_count += 1
@@ -556,8 +585,8 @@ class RedisDocStatusStorage(DocStatusStorage):
         if redis_workspace and redis_workspace.strip():
             # Use environment variable value, overriding the passed workspace parameter
             effective_workspace = redis_workspace.strip()
-            logger.info(
-                f"Using REDIS_WORKSPACE environment variable: '{effective_workspace}' (overriding passed workspace: '{self.workspace}')"
+            logger.debug(
+                f"using REDIS_WORKSPACE environment variable: '{effective_workspace}' (overriding passed workspace: '{self.workspace}')"
             )
         else:
             # Use the workspace parameter passed during initialization
@@ -583,7 +612,8 @@ class RedisDocStatusStorage(DocStatusStorage):
             )
 
         self._redis_url = os.environ.get(
-            "REDIS_URI", config.get("redis", "uri", fallback="redis://localhost:6379")
+            "REDIS_URI", config.get(
+                "redis", "uri", fallback="redis://localhost:6379")
         )
         self._pool = None
         self._redis = None
@@ -660,7 +690,8 @@ class RedisDocStatusStorage(DocStatusStorage):
                     f"[{self.workspace}] Closed Redis connection for doc status {self.namespace}"
                 )
             except Exception as e:
-                logger.error(f"[{self.workspace}] Error closing Redis connection: {e}")
+                logger.error(
+                    f"[{self.workspace}] Error closing Redis connection: {e}")
             finally:
                 self._redis = None
 
@@ -689,7 +720,8 @@ class RedisDocStatusStorage(DocStatusStorage):
                 pipe.exists(f"{self.final_namespace}:{key}")
             results = await pipe.execute()
 
-            existing_ids = {keys_list[i] for i, exists in enumerate(results) if exists}
+            existing_ids = {keys_list[i]
+                            for i, exists in enumerate(results) if exists}
             return set(keys) - existing_ids
 
     async def get_by_ids(self, ids: list[str]) -> list[dict[str, Any]]:
@@ -746,7 +778,8 @@ class RedisDocStatusStorage(DocStatusStorage):
                     if cursor == 0:
                         break
             except Exception as e:
-                logger.error(f"[{self.workspace}] Error getting status counts: {e}")
+                logger.error(
+                    f"[{self.workspace}] Error getting status counts: {e}")
 
         return counts
 
@@ -792,7 +825,8 @@ class RedisDocStatusStorage(DocStatusStorage):
                                         if "error_msg" not in data:
                                             data["error_msg"] = None
 
-                                        result[doc_id] = DocProcessingStatus(**data)
+                                        result[doc_id] = DocProcessingStatus(
+                                            **data)
                                 except (json.JSONDecodeError, KeyError) as e:
                                     logger.error(
                                         f"[{self.workspace}] Error processing document {key}: {e}"
@@ -802,7 +836,8 @@ class RedisDocStatusStorage(DocStatusStorage):
                     if cursor == 0:
                         break
             except Exception as e:
-                logger.error(f"[{self.workspace}] Error getting docs by status: {e}")
+                logger.error(
+                    f"[{self.workspace}] Error getting docs by status: {e}")
 
         return result
 
@@ -848,7 +883,8 @@ class RedisDocStatusStorage(DocStatusStorage):
                                         if "error_msg" not in data:
                                             data["error_msg"] = None
 
-                                        result[doc_id] = DocProcessingStatus(**data)
+                                        result[doc_id] = DocProcessingStatus(
+                                            **data)
                                 except (json.JSONDecodeError, KeyError) as e:
                                     logger.error(
                                         f"[{self.workspace}] Error processing document {key}: {e}"
@@ -858,7 +894,8 @@ class RedisDocStatusStorage(DocStatusStorage):
                     if cursor == 0:
                         break
             except Exception as e:
-                logger.error(f"[{self.workspace}] Error getting docs by track_id: {e}")
+                logger.error(
+                    f"[{self.workspace}] Error getting docs by track_id: {e}")
 
         return result
 
@@ -887,7 +924,8 @@ class RedisDocStatusStorage(DocStatusStorage):
                     pipe.set(f"{self.final_namespace}:{k}", json.dumps(v))
                 await pipe.execute()
             except json.JSONDecodeError as e:
-                logger.error(f"[{self.workspace}] JSON decode error during upsert: {e}")
+                logger.error(
+                    f"[{self.workspace}] JSON decode error during upsert: {e}")
                 raise
 
     @redis_retry
@@ -897,7 +935,8 @@ class RedisDocStatusStorage(DocStatusStorage):
                 data = await redis.get(f"{self.final_namespace}:{id}")
                 return json.loads(data) if data else None
             except json.JSONDecodeError as e:
-                logger.error(f"[{self.workspace}] JSON decode error for id {id}: {e}")
+                logger.error(
+                    f"[{self.workspace}] JSON decode error for id {id}: {e}")
                 return None
 
     async def delete(self, doc_ids: list[str]) -> None:
@@ -1001,13 +1040,16 @@ class RedisDocStatusStorage(DocStatusStorage):
                                         sort_key = doc_id
                                     elif sort_field == "file_path":
                                         # Use pinyin sorting for file_path field to support Chinese characters
-                                        file_path_value = data.get(sort_field, "")
-                                        sort_key = get_pinyin_sort_key(file_path_value)
+                                        file_path_value = data.get(
+                                            sort_field, "")
+                                        sort_key = get_pinyin_sort_key(
+                                            file_path_value)
                                     else:
                                         sort_key = data.get(sort_field, "")
 
                                     doc_status = DocProcessingStatus(**data)
-                                    all_docs.append((doc_id, doc_status, sort_key))
+                                    all_docs.append(
+                                        (doc_id, doc_status, sort_key))
 
                                 except (json.JSONDecodeError, KeyError) as e:
                                     logger.error(
@@ -1019,7 +1061,8 @@ class RedisDocStatusStorage(DocStatusStorage):
                         break
 
             except Exception as e:
-                logger.error(f"[{self.workspace}] Error getting paginated docs: {e}")
+                logger.error(
+                    f"[{self.workspace}] Error getting paginated docs: {e}")
                 return [], 0
 
         # Sort documents using the separate sort key

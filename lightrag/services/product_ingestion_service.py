@@ -262,12 +262,34 @@ class ProductIngestionService:
             func=self.embedding_func,
         )
 
-        # Initialize LightRAG with Neo4j graph storage
+        # Initialize LightRAG with storage configuration from environment variables
+        # Use EXACTLY the same defaults as main server (api/config.py)
+        from lightrag.utils import get_env_value
+        from lightrag.api.config import DefaultRAGStorageConfig
+
+        kv_storage = get_env_value(
+            "LIGHTRAG_KV_STORAGE", DefaultRAGStorageConfig.KV_STORAGE)
+        doc_status_storage = get_env_value(
+            "LIGHTRAG_DOC_STATUS_STORAGE", DefaultRAGStorageConfig.DOC_STATUS_STORAGE)
+        graph_storage = get_env_value(
+            "LIGHTRAG_GRAPH_STORAGE", DefaultRAGStorageConfig.GRAPH_STORAGE)
+        vector_storage = get_env_value(
+            "LIGHTRAG_VECTOR_STORAGE", DefaultRAGStorageConfig.VECTOR_STORAGE)
+
+        logger.info(f"📦 Product ingestion using storage backends:")
+        logger.info(f"   - KV Storage: {kv_storage}")
+        logger.info(f"   - Doc Status Storage: {doc_status_storage}")
+        logger.info(f"   - Graph Storage: {graph_storage}")
+        logger.info(f"   - Vector Storage: {vector_storage}")
+
         self.rag = LightRAG(
             working_dir=self.config.working_dir,
             llm_model_func=self.llm_func,
             embedding_func=embedding_func_instance,
-            graph_storage="Neo4jGraphStorage",  # Use Neo4j for knowledge graph
+            kv_storage=kv_storage,
+            vector_storage=vector_storage,
+            graph_storage=graph_storage,
+            doc_status_storage=doc_status_storage,
             log_level="INFO",
         )
 
