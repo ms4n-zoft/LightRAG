@@ -9,8 +9,8 @@ class IngestionConfig:
     """Configuration for the ingestion process"""
 
     # Batch processing settings
-    batch_size: int = 5  # Reduced for faster LLM processing (was 25)
-    max_workers: int = 3  # Conservative concurrency
+    batch_size: int = 1  # Reduced for faster LLM processing (was 25)
+    max_workers: int = 2  # Conservative concurrency
 
     # Text processing settings
     chunk_size: int = 800  # Smaller chunks for better granularity
@@ -32,8 +32,8 @@ class IngestionConfig:
     max_memory_usage_mb: Optional[int] = 2048  # 2GB limit
 
     # Timeout and resilience settings
-    job_timeout_minutes: int = 180  # 3 hours default (was 30 minutes)
-    batch_timeout_minutes: int = 15  # 15 minutes per batch
+    job_timeout_minutes: int = 2880  # 2 days (48 hours)
+    batch_timeout_minutes: int = 5  # 15 minutes per batch
     enable_auto_resume: bool = True  # Enable automatic resume on timeout
     max_consecutive_failures: int = 5  # Stop after 5 consecutive batch failures
     checkpoint_interval: int = 10  # Save progress every 10 batches
