@@ -32,8 +32,8 @@ class IngestionConfig:
     max_memory_usage_mb: Optional[int] = 2048  # 2GB limit
 
     # Timeout and resilience settings
-    job_timeout_minutes: int = 2880  # 2 days (48 hours)
-    batch_timeout_minutes: int = 5  # 15 minutes per batch
+    job_timeout_minutes: int = 5760  # 4 days (96 hours)
+    batch_timeout_minutes: int = 10  # 10 minutes per batch
     enable_auto_resume: bool = True  # Enable automatic resume on timeout
-    max_consecutive_failures: int = 5  # Stop after 5 consecutive batch failures
+    max_consecutive_failures: int = 6  # Stop after 6 consecutive batch failures
     checkpoint_interval: int = 10  # Save progress every 10 batches
