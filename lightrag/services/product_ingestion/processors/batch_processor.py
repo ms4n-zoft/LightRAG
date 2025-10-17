@@ -43,7 +43,7 @@ class BatchProcessor:
 
         batch_results = {
             "batch_id": batch_id,
-            "start_time": start_time,
+            "start_time": start_time.isoformat(),
             "processed": 0,
             "errors": [],
             "metadata_summary": {},
@@ -189,7 +189,7 @@ class BatchProcessor:
 
         # Calculate processing time
         end_time = datetime.now()
-        batch_results["end_time"] = end_time
+        batch_results["end_time"] = end_time.isoformat()
         batch_results["duration_seconds"] = (
             end_time - start_time).total_seconds()
 
