@@ -33,7 +33,8 @@ class MilvusVectorDBStorage(BaseVectorStorage):
             FieldSchema(
                 name="id", dtype=DataType.VARCHAR, max_length=64, is_primary=True
             ),
-            FieldSchema(name="vector", dtype=DataType.FLOAT_VECTOR, dim=dimension),
+            FieldSchema(name="vector", dtype=DataType.FLOAT_VECTOR,
+                        dim=dimension),
             FieldSchema(name="created_at", dtype=DataType.INT64),
         ]
 
@@ -232,7 +233,8 @@ class MilvusVectorDBStorage(BaseVectorStorage):
                         logger.debug(
                             f"[{self.workspace}] IndexParams method failed for entity_name: {e}"
                         )
-                        self._create_scalar_index_fallback("entity_name", "INVERTED")
+                        self._create_scalar_index_fallback(
+                            "entity_name", "INVERTED")
 
                 elif self.namespace.endswith("relationships"):
                     # Create indexes for relationship fields
@@ -249,7 +251,8 @@ class MilvusVectorDBStorage(BaseVectorStorage):
                         logger.debug(
                             f"[{self.workspace}] IndexParams method failed for src_id: {e}"
                         )
-                        self._create_scalar_index_fallback("src_id", "INVERTED")
+                        self._create_scalar_index_fallback(
+                            "src_id", "INVERTED")
 
                     try:
                         tgt_id_index = self._get_index_params()
@@ -264,7 +267,8 @@ class MilvusVectorDBStorage(BaseVectorStorage):
                         logger.debug(
                             f"[{self.workspace}] IndexParams method failed for tgt_id: {e}"
                         )
-                        self._create_scalar_index_fallback("tgt_id", "INVERTED")
+                        self._create_scalar_index_fallback(
+                            "tgt_id", "INVERTED")
 
                 elif self.namespace.endswith("chunks"):
                     # Create indexes for chunk fields
@@ -281,7 +285,8 @@ class MilvusVectorDBStorage(BaseVectorStorage):
                         logger.debug(
                             f"[{self.workspace}] IndexParams method failed for full_doc_id: {e}"
                         )
-                        self._create_scalar_index_fallback("full_doc_id", "INVERTED")
+                        self._create_scalar_index_fallback(
+                            "full_doc_id", "INVERTED")
 
                 # No common indexes needed
 
@@ -296,12 +301,14 @@ class MilvusVectorDBStorage(BaseVectorStorage):
 
                 # Create scalar indexes using fallback
                 if self.namespace.endswith("entities"):
-                    self._create_scalar_index_fallback("entity_name", "INVERTED")
+                    self._create_scalar_index_fallback(
+                        "entity_name", "INVERTED")
                 elif self.namespace.endswith("relationships"):
                     self._create_scalar_index_fallback("src_id", "INVERTED")
                     self._create_scalar_index_fallback("tgt_id", "INVERTED")
                 elif self.namespace.endswith("chunks"):
-                    self._create_scalar_index_fallback("full_doc_id", "INVERTED")
+                    self._create_scalar_index_fallback(
+                        "full_doc_id", "INVERTED")
 
             logger.info(
                 f"[{self.workspace}] Created indexes for collection: {self.namespace}"
@@ -620,7 +627,8 @@ class MilvusVectorDBStorage(BaseVectorStorage):
                     batch_size=2000,  # Adjustable batch size for optimal performance
                     output_fields=["*"],  # Get all fields
                 )
-                logger.debug(f"[{self.workspace}] Query iterator created successfully")
+                logger.debug(
+                    f"[{self.workspace}] Query iterator created successfully")
             except Exception as iterator_error:
                 logger.error(
                     f"[{self.workspace}] Failed to create query iterator: {iterator_error}"
@@ -750,7 +758,8 @@ class MilvusVectorDBStorage(BaseVectorStorage):
     def _validate_collection_compatibility(self):
         """Validate existing collection's dimension and schema compatibility"""
         try:
-            collection_info = self._client.describe_collection(self.final_namespace)
+            collection_info = self._client.describe_collection(
+                self.final_namespace)
 
             # 1. Check vector dimension
             self._check_vector_dimension(collection_info)
@@ -776,7 +785,8 @@ class MilvusVectorDBStorage(BaseVectorStorage):
                 logger.error(
                     f"[{self.workspace}] Collection {self.namespace} does not exist"
                 )
-                raise ValueError(f"Collection {self.final_namespace} does not exist")
+                raise ValueError(
+                    f"Collection {self.final_namespace} does not exist")
 
             # Load the collection if it's not already loaded
             # In Milvus, collections need to be loaded before they can be searched
@@ -794,7 +804,8 @@ class MilvusVectorDBStorage(BaseVectorStorage):
 
         try:
             # Check if our specific collection exists
-            collection_exists = self._client.has_collection(self.final_namespace)
+            collection_exists = self._client.has_collection(
+                self.final_namespace)
             logger.info(
                 f"[{self.workspace}] VectorDB collection '{self.namespace}' exists check: {collection_exists}"
             )
@@ -820,7 +831,8 @@ class MilvusVectorDBStorage(BaseVectorStorage):
                     logger.error(
                         f"[{self.workspace}] Validation error: {validation_error}"
                     )
-                    logger.error(f"[{self.workspace}] MANUAL INTERVENTION REQUIRED:")
+                    logger.error(
+                        f"[{self.workspace}] MANUAL INTERVENTION REQUIRED:")
                     logger.error(
                         f"[{self.workspace}] 1. Check the existing collection schema and data integrity"
                     )
@@ -845,7 +857,8 @@ class MilvusVectorDBStorage(BaseVectorStorage):
                     )
 
             # Collection doesn't exist, create new collection
-            logger.info(f"[{self.workspace}] Creating new collection: {self.namespace}")
+            logger.info(
+                f"[{self.workspace}] Creating new collection: {self.namespace}")
             schema = self._create_schema_for_namespace()
 
             # Create collection with schema only first
@@ -938,7 +951,8 @@ class MilvusVectorDBStorage(BaseVectorStorage):
         else:
             # When workspace is empty, final_namespace equals original namespace
             self.final_namespace = self.namespace
-            logger.debug(f"Final namespace (no workspace): '{self.final_namespace}'")
+            logger.debug(
+                f"Final namespace (no workspace): '{self.final_namespace}'")
             self.workspace = "_"
 
         kwargs = self.global_config.get("vector_db_storage_cls_kwargs", {})
@@ -979,14 +993,16 @@ class MilvusVectorDBStorage(BaseVectorStorage):
                             ),
                         ),
                         user=os.environ.get(
-                            "MILVUS_USER", config.get("milvus", "user", fallback=None)
+                            "MILVUS_USER", config.get(
+                                "milvus", "user", fallback=None)
                         ),
                         password=os.environ.get(
                             "MILVUS_PASSWORD",
                             config.get("milvus", "password", fallback=None),
                         ),
                         token=os.environ.get(
-                            "MILVUS_TOKEN", config.get("milvus", "token", fallback=None)
+                            "MILVUS_TOKEN", config.get(
+                                "milvus", "token", fallback=None)
                         ),
                         db_name=os.environ.get(
                             "MILVUS_DB_NAME",
@@ -1031,7 +1047,7 @@ class MilvusVectorDBStorage(BaseVectorStorage):
         ]
         contents = [v["content"] for v in data.values()]
         batches = [
-            contents[i : i + self._max_batch_size]
+            contents[i: i + self._max_batch_size]
             for i in range(0, len(contents), self._max_batch_size)
         ]
 
@@ -1054,7 +1070,8 @@ class MilvusVectorDBStorage(BaseVectorStorage):
 
         # Use provided embedding or compute it
         if query_embedding is not None:
-            embedding = [query_embedding]  # Milvus expects a list of embeddings
+            # Milvus expects a list of embeddings
+            embedding = [query_embedding]
         else:
             embedding = await self.embedding_func(
                 [query], _priority=5
@@ -1115,7 +1132,8 @@ class MilvusVectorDBStorage(BaseVectorStorage):
                 )
 
         except Exception as e:
-            logger.error(f"[{self.workspace}] Error deleting entity {entity_name}: {e}")
+            logger.error(
+                f"[{self.workspace}] Error deleting entity {entity_name}: {e}")
 
     async def delete_entity_relation(self, entity_name: str) -> None:
         """Delete all relations associated with an entity
@@ -1132,7 +1150,8 @@ class MilvusVectorDBStorage(BaseVectorStorage):
 
             # Find all relations involving this entity
             results = self._client.query(
-                collection_name=self.final_namespace, filter=expr, output_fields=["id"]
+                collection_name=self.final_namespace, filter=expr, output_fields=[
+                    "id"]
             )
 
             if not results or len(results) == 0:
@@ -1173,7 +1192,8 @@ class MilvusVectorDBStorage(BaseVectorStorage):
             self._ensure_collection_loaded()
 
             # Delete vectors by IDs
-            result = self._client.delete(collection_name=self.final_namespace, pks=ids)
+            result = self._client.delete(
+                collection_name=self.final_namespace, pks=ids)
 
             if result and result.get("delete_count", 0) > 0:
                 logger.debug(

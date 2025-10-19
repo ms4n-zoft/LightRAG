@@ -188,11 +188,15 @@ class LightRAGClient:
         return self.rag
 
     async def _enhance_metadata_support(self):
-        """Enhance vector storages with additional metadata fields for product ingestion"""
-        # Define essential product metadata fields (from normalizer)
+        """Enhance vector storages with minimal product metadata for search convenience
+
+        Only store product_id and weburl - they're small and useful in search results.
+        All other metadata is available in the graph storage.
+        """
+        # Minimal product fields for convenience (small size, useful for search results)
         product_meta_fields = {
-            "product_id", "category", "weburl", "company", "company_website",
-            "category_ids", "logo_key", "logo_url"
+            "product_id",  # unique identifier
+            "weburl",      # product reference url
         }
 
         # Enhance entities vector storage
@@ -208,7 +212,7 @@ class LightRAGClient:
             self.rag.chunks_vdb.meta_fields.update(product_meta_fields)
 
         logger.info(
-            f"✅ Enhanced vector storages with {len(product_meta_fields)} product metadata fields")
+            f"✅ Enhanced vector storages with {len(product_meta_fields)} minimal product fields (product_id, weburl)")
 
     async def insert_text(self, text: str) -> bool:
         """Insert text into LightRAG (async)"""

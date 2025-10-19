@@ -58,6 +58,10 @@ DEFAULT_RERANK_BINDING = "null"
 # File path configuration for vector and graph database(Should not be changed, used in Milvus Schema)
 DEFAULT_MAX_FILE_PATH_LENGTH = 32768
 
+# milvus dynamic field total size limit (64KB for all dynamic fields combined)
+# slightly less than 65536 to leave buffer
+MILVUS_MAX_DYNAMIC_FIELD_SIZE = 60000
+
 # Default temperature for LLM
 DEFAULT_TEMPERATURE = 1.0
 
