@@ -1055,11 +1055,19 @@ async def _rebuild_single_entity(
             entity_vdb_id = compute_mdhash_id(entity_name, prefix="ent-")
             entity_content = f"{entity_name}\n{final_description}"
 
+            # truncate source_id to prevent milvus dynamic field overflow
+            source_id = updated_entity_data["source_id"]
+            max_bytes = 30 * 1024  # 30KB in bytes
+            encoded_source_id = source_id.encode('utf-8')
+            if len(encoded_source_id) > max_bytes:
+                source_id = encoded_source_id[:max_bytes].decode(
+                    'utf-8', errors='ignore') + "...[truncated]"
+
             vdb_data = {
                 entity_vdb_id: {
                     "content": entity_content,
                     "entity_name": entity_name,
-                    "source_id": updated_entity_data["source_id"],
+                    "source_id": source_id,
                     "description": final_description,
                     "entity_type": entity_type,
                     "file_path": updated_entity_data["file_path"],
@@ -1700,6 +1708,14 @@ async def merge_nodes_and_edges(
 
                     # Vector database operation (equally critical, must succeed)
                     if entity_vdb is not None and entity_data:
+                        # truncate source_id to prevent milvus dynamic field overflow
+                        source_id = entity_data["source_id"]
+                        max_bytes = 30 * 1024  # 30KB in bytes
+                        encoded_source_id = source_id.encode('utf-8')
+                        if len(encoded_source_id) > max_bytes:
+                            source_id = encoded_source_id[:max_bytes].decode(
+                                'utf-8', errors='ignore') + "...[truncated]"
+
                         data_for_vdb = {
                             compute_mdhash_id(
                                 entity_data["entity_name"], prefix="ent-"
@@ -1707,7 +1723,7 @@ async def merge_nodes_and_edges(
                                 "entity_name": entity_data["entity_name"],
                                 "entity_type": entity_data["entity_type"],
                                 "content": f"{entity_data['entity_name']}\n{entity_data['description']}",
-                                "source_id": entity_data["source_id"],
+                                "source_id": source_id,
                                 "file_path": entity_data.get(
                                     "file_path", "unknown_source"
                                 ),
@@ -1870,11 +1886,19 @@ async def merge_nodes_and_edges(
                             )
                             entity_content = f"{entity_data['entity_name']}\n{entity_data['description']}"
 
+                            # truncate source_id to prevent milvus dynamic field overflow
+                            source_id = entity_data["source_id"]
+                            max_bytes = 30 * 1024  # 30KB in bytes
+                            encoded_source_id = source_id.encode('utf-8')
+                            if len(encoded_source_id) > max_bytes:
+                                source_id = encoded_source_id[:max_bytes].decode(
+                                    'utf-8', errors='ignore') + "...[truncated]"
+
                             vdb_data = {
                                 entity_vdb_id: {
                                     "content": entity_content,
                                     "entity_name": entity_data["entity_name"],
-                                    "source_id": entity_data["source_id"],
+                                    "source_id": source_id,
                                     "entity_type": entity_data["entity_type"],
                                     "file_path": entity_data.get(
                                         "file_path", "unknown_source"
