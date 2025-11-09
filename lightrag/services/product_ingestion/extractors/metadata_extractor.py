@@ -3,7 +3,7 @@
 import logging
 from typing import Dict, Any, List, Optional
 from datetime import datetime
-from ..models.metadata import EnhancedProductMetadata
+from ..models.metadata import EnhancedProductMetadata, MetadataValidator
 from ..utils.objectid_utils import ObjectIdUtils, safe_str, safe_get_oid
 from ..utils.name_resolution import NameResolver
 
@@ -32,11 +32,13 @@ class MetadataExtractor:
         try:
             # Core identifiers - use ObjectId utilities
             product_id = ObjectIdUtils.extract_product_id(product_json)
-            product_name = product_json.get('product_name', 'Unknown Product')
-            weburl = product_json.get('weburl', '')
-            company = product_json.get('company', 'Unknown Company')
+            product_name = MetadataValidator.safe_str(
+                product_json.get('product_name'), 'Unknown Product')
+            weburl = MetadataValidator.safe_str(product_json.get('weburl'), '')
+            company = MetadataValidator.safe_str(
+                product_json.get('company'), 'Unknown Company')
 
-            # Visual and branding
+            # Visual and branding - safe string extraction
             logo_key = product_json.get('logo_key')
             logo_url = product_json.get('logo_url')
             company_website = product_json.get('company_website')
@@ -92,10 +94,12 @@ class MetadataExtractor:
                 pricing_currency=pricing_info.get('currency', 'USD'),
                 price_range=pricing_info.get('price_range', 'Unknown'),
 
-                # Content
-                description=product_json.get('description', ''),
-                overview=product_json.get('overview', ''),
-                usp=product_json.get('usp', ''),
+                # Content - safe string extraction
+                description=MetadataValidator.safe_str(
+                    product_json.get('description'), ''),
+                overview=MetadataValidator.safe_str(
+                    product_json.get('overview'), ''),
+                usp=MetadataValidator.safe_str(product_json.get('usp'), ''),
 
                 # Features
                 features=features,
@@ -103,15 +107,21 @@ class MetadataExtractor:
                 supports=self._extract_supports(
                     product_json.get('supports', [])),
 
-                # Ratings
-                overall_rating=ratings.get('overall_rating', 0.0),
-                ease_of_use=ratings.get('ease_of_use', 0.0),
-                breadth_of_features=ratings.get('breadth_of_features', 0.0),
-                ease_of_implementation=ratings.get(
-                    'ease_of_implementation', 0.0),
-                value_for_money=ratings.get('value_for_money', 0.0),
-                customer_support=ratings.get('customer_support', 0.0),
-                total_reviews=ratings.get('total_reviews', 0),
+                # Ratings - use safe extraction with null handling
+                overall_rating=MetadataValidator.safe_float(
+                    ratings.get('overall_rating'), 0.0),
+                ease_of_use=MetadataValidator.safe_float(
+                    ratings.get('ease_of_use'), 0.0),
+                breadth_of_features=MetadataValidator.safe_float(
+                    ratings.get('breadth_of_features'), 0.0),
+                ease_of_implementation=MetadataValidator.safe_float(
+                    ratings.get('ease_of_implementation'), 0.0),
+                value_for_money=MetadataValidator.safe_float(
+                    ratings.get('value_for_money'), 0.0),
+                customer_support=MetadataValidator.safe_float(
+                    ratings.get('customer_support'), 0.0),
+                total_reviews=MetadataValidator.safe_int(
+                    ratings.get('total_reviews'), 0),
 
                 # Technical
                 integrations=integrations,
@@ -126,12 +136,15 @@ class MetadataExtractor:
                 contact=ObjectIdUtils.safe_contact_number(product_json),
                 support_email=product_json.get('support_email'),
 
-                # Status
-                is_active=product_json.get('is_active', True),
-                is_verified=product_json.get('is_verify', False),
-                admin_verified=product_json.get('admin_verified', False),
-                subscription_plan=product_json.get(
-                    'subscription_plan', 'Basic'),
+                # Status - safe boolean extraction
+                is_active=MetadataValidator.safe_bool(
+                    product_json.get('is_active'), True),
+                is_verified=MetadataValidator.safe_bool(
+                    product_json.get('is_verify'), False),
+                admin_verified=MetadataValidator.safe_bool(
+                    product_json.get('admin_verified'), False),
+                subscription_plan=MetadataValidator.safe_str(
+                    product_json.get('subscription_plan'), 'Basic'),
 
                 # Timestamps
                 created_on=created_on,
