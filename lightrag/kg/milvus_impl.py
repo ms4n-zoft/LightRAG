@@ -1100,6 +1100,74 @@ class MilvusVectorDBStorage(BaseVectorStorage):
             for dp in results[0]
         ]
 
+    async def search_by_ids(
+        self,
+        query_embedding: list[float],
+        candidate_ids: list[str],
+        top_k: int,
+        min_similarity: float | None = None,
+    ) -> list[str]:
+        """Search for top_k most similar vectors from a filtered set of candidate IDs.
+
+        This uses Milvus native filtered search which is much more efficient than
+        fetching all vectors and computing similarity manually.
+
+        Args:
+            query_embedding: The query vector embedding
+            candidate_ids: List of candidate IDs to search within
+            top_k: Number of top similar results to return
+
+        Returns:
+            List of IDs sorted by similarity (highest first), limited to top_k
+        """
+        if not candidate_ids or top_k <= 0:
+            return []
+
+        try:
+            # Ensure collection is loaded before searching
+            self._ensure_collection_loaded()
+
+            # Build filter expression for candidate IDs
+            # Milvus has a limit on filter expression length, so we batch if needed
+            max_ids_per_batch = 1000  # Safe limit for filter expression
+            all_results = []
+
+            for i in range(0, len(candidate_ids), max_ids_per_batch):
+                batch_ids = candidate_ids[i : i + max_ids_per_batch]
+                id_list = '", "'.join(batch_ids)
+                filter_expr = f'id in ["{id_list}"]'
+
+                # Use Milvus native search with filter - this is highly optimized
+                # If a min_similarity is provided, include it so Milvus filters low-scoring results server-side.
+                search_params = {"metric_type": "COSINE"}
+                if min_similarity is not None:
+                    # Use 'radius' parameter when available to ask Milvus for a similarity threshold.
+                    # Some Milvus deployments may ignore unknown params; handle errors via fallback.
+                    search_params["params"] = {"radius": min_similarity}
+
+                results = self._client.search(
+                    collection_name=self.final_namespace,
+                    data=[query_embedding],
+                    filter=filter_expr,
+                    limit=min(top_k, len(batch_ids)),
+                    output_fields=["id"],
+                    search_params=search_params,
+                )
+
+                # Collect results with scores
+                for dp in results[0]:
+                    all_results.append((dp["id"], dp["distance"]))
+
+            # Sort all results by similarity (higher = better for cosine) and return top_k IDs
+            all_results.sort(key=lambda x: x[1], reverse=True)
+            return [id for id, _ in all_results[:top_k]]
+
+        except Exception as e:
+            logger.error(
+                f"[{self.workspace}] Error in search_by_ids for {self.namespace}: {e}"
+            )
+            return []  # Return empty to trigger fallback
+
     async def index_done_callback(self) -> None:
         # Milvus handles persistence automatically
         pass
@@ -1296,25 +1364,40 @@ class MilvusVectorDBStorage(BaseVectorStorage):
             # Ensure collection is loaded before querying
             self._ensure_collection_loaded()
 
-            # Prepare the ID filter expression
-            id_list = '", "'.join(ids)
-            filter_expr = f'id in ["{id_list}"]'
-
-            # Query Milvus with the filter, requesting only vector field
-            result = self._client.query(
-                collection_name=self.final_namespace,
-                filter=filter_expr,
-                output_fields=["vector"],
-            )
-
             vectors_dict = {}
-            for item in result:
-                if item and "vector" in item and "id" in item:
-                    # Convert numpy array to list if needed
-                    vector_data = item["vector"]
-                    if isinstance(vector_data, np.ndarray):
-                        vector_data = vector_data.tolist()
-                    vectors_dict[item["id"]] = vector_data
+
+            # Batch size to avoid gRPC message size limits
+            # With 1536 dimensions * 4 bytes * batch_size, we want to stay well under 4MB
+            # 500 vectors * 1536 dims * 4 bytes ≈ 3MB, safe margin under 4MB gRPC limit
+            batch_size = 500
+
+            # Process in batches to avoid gRPC message size exceeded errors
+            for i in range(0, len(ids), batch_size):
+                batch_ids = ids[i : i + batch_size]
+
+                # Prepare the ID filter expression for this batch
+                id_list = '", "'.join(batch_ids)
+                filter_expr = f'id in ["{id_list}"]'
+
+                # Query Milvus with the filter, requesting only vector field
+                result = self._client.query(
+                    collection_name=self.final_namespace,
+                    filter=filter_expr,
+                    output_fields=["vector"],
+                )
+
+                for item in result:
+                    if item and "vector" in item and "id" in item:
+                        # Convert numpy array to list if needed
+                        vector_data = item["vector"]
+                        if isinstance(vector_data, np.ndarray):
+                            vector_data = vector_data.tolist()
+                        vectors_dict[item["id"]] = vector_data
+
+                if len(ids) > batch_size:
+                    logger.debug(
+                        f"[{self.workspace}] Retrieved vectors batch {i // batch_size + 1}/{(len(ids) + batch_size - 1) // batch_size}"
+                    )
 
             return vectors_dict
         except Exception as e:

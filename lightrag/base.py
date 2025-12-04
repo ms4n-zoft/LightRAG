@@ -303,6 +303,34 @@ class BaseVectorStorage(StorageNameSpace, ABC):
         """
         pass
 
+    async def search_by_ids(
+        self,
+        query_embedding: list[float],
+        candidate_ids: list[str],
+        top_k: int,
+        min_similarity: float | None = None,
+    ) -> list[str]:
+        """Search for top_k most similar vectors from a filtered set of candidate IDs.
+
+        This is an optimized method for vector databases that support filtered search.
+        The optional ``min_similarity`` parameter, when provided, requests that the
+        vector database only return results with similarity at or above the threshold.
+
+        Default implementation falls back to get_vectors_by_ids + manual similarity calculation.
+
+        Args:
+            query_embedding: The query vector embedding
+            candidate_ids: List of candidate IDs to search within
+            top_k: Number of top similar results to return
+            min_similarity: Optional cosine similarity threshold (0..1). If provided,
+                            subclasses may use it to filter low-similarity results server-side.
+
+        Returns:
+            List of IDs sorted by similarity (highest first), limited to top_k
+        """
+        # Default implementation - subclasses can override with optimized versions
+        return []  # Empty means "not implemented, use fallback"
+
 
 @dataclass
 class BaseKVStorage(StorageNameSpace, ABC):

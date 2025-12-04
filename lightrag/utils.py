@@ -2158,7 +2158,30 @@ async def pick_by_vector_similarity(
                 "Using pre-computed query embedding for vector similarity chunk selection"
             )
 
-        # Get chunk embeddings from vector database
+        # Try optimized search_by_ids first (uses native vector DB filtering)
+        # This is much more efficient for large candidate sets as it avoids
+        # transferring all vectors over the network
+        if hasattr(chunks_vdb, "search_by_ids"):
+            # Prefer server-side filtered search and, when available, pass configured similarity threshold
+            min_sim = getattr(chunks_vdb, "cosine_better_than_threshold", None)
+            selected_chunks = await chunks_vdb.search_by_ids(
+                query_embedding=query_embedding,
+                candidate_ids=all_chunk_ids,
+                top_k=num_of_chunks,
+                min_similarity=min_sim,
+            )
+            if selected_chunks:
+                logger.debug(
+                    f"Vector similarity chunk selection (optimized): {len(selected_chunks)} chunks from {len(all_chunk_ids)} candidates"
+                )
+                return selected_chunks
+            # If empty result, fall through to legacy method
+            logger.debug(
+                "search_by_ids returned empty, falling back to legacy method"
+            )
+
+        # Legacy method: fetch all vectors and compute similarity manually
+        # This can be slow and hit gRPC limits for large candidate sets
         chunk_vectors = await chunks_vdb.get_vectors_by_ids(all_chunk_ids)
         logger.debug(
             f"Vector similarity chunk selection: {len(chunk_vectors)} chunk vectors Retrieved"
