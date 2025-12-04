@@ -2159,7 +2159,9 @@ class LightRAG:
             )
         else:
             raise ValueError(f"Unknown mode {param.mode}")
+        logger.info("aquery: about to call _query_done()")
         await self._query_done()
+        logger.info("aquery: _query_done() completed, returning response")
         return response
 
     async def aquery_data(
