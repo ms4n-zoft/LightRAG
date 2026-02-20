@@ -33,7 +33,8 @@ from pymongo import MongoClient
 DEFAULT_BASE_URL = "http://localhost:9621"
 DEFAULT_API_KEY = "792IOIM4luYy/Wh4qsnGm/jlZwOVHS8jI8b4FJ8Nco4="
 DEFAULT_PARTNER_ID = "peko"
-DEFAULT_MONGO_URI = "mongodb://localhost:27017/?directConnection=true"
+# Read from env var — set PEKO_MONGO_URI in .env.test or export before running
+DEFAULT_MONGO_URI = os.getenv("PEKO_MONGO_URI", "")
 DEFAULT_MONGO_DB = "PekoPartnerDB"
 DEFAULT_MONGO_COLLECTION = "products"
 
@@ -515,7 +516,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--base-url", default=os.getenv("LIGHTRAG_BASE_URL", DEFAULT_BASE_URL))
     parser.add_argument("--api-key", default=os.getenv("LIGHTRAG_API_KEY", DEFAULT_API_KEY))
     parser.add_argument("--partner-id", default=DEFAULT_PARTNER_ID)
-    parser.add_argument("--mongo-uri", default=os.getenv("MONGO_URI", DEFAULT_MONGO_URI))
+    parser.add_argument("--mongo-uri", default=DEFAULT_MONGO_URI)
     parser.add_argument("--mongo-db", default=DEFAULT_MONGO_DB)
     parser.add_argument("--mongo-collection", default=DEFAULT_MONGO_COLLECTION)
     parser.add_argument("--max-recos", type=int, default=8)
