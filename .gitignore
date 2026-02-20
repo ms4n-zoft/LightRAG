@@ -66,8 +66,8 @@ download_models_hf.py
 lightrag-dev/
 gui/
 
-# unit-test files
-test_*
+# unit-test scratch files (root level only)
+/test_*
 
 # Cline files
 memory-bank
@@ -78,3 +78,12 @@ memory-bank/
 .cursor/
 
 /env-old
+
+# test artifacts (keep test scripts)
+tests/scope/
+tests/peko_scope_mapping.json
+tests/explore_*
+tests/replace_peko_ids.py
+
+# generated docs context files
+docs/partner-scope-context.md
