@@ -52,12 +52,102 @@ from .constants import (
 )
 from .kg.shared_storage import get_storage_keyed_lock
 import time
+import re
+from copy import copy
 from dotenv import load_dotenv
 
 # use the .env that is inside the current folder
 # allows to use different .env file for each lightrag instance
 # the OS environment variables take precedence over the .env file
 load_dotenv(dotenv_path=".env", override=False)
+
+# ──────────────────────────────────────────────────────────────
+# Scope filtering utilities
+# ──────────────────────────────────────────────────────────────
+
+_PRODUCT_ID_RE = re.compile(r"product_id:([a-f0-9]+)")
+
+
+def _extract_product_ids_from_file_path(file_path: str) -> set[str]:
+    """
+    Extract all product IDs from a file_path string.
+    file_path format: "product_id:<hex_id>:source:product_batch_N_item_M"
+    Multi-product: segments joined by GRAPH_FIELD_SEP (<SEP>).
+    """
+    if not file_path:
+        return set()
+    return set(_PRODUCT_ID_RE.findall(file_path))
+
+
+def _is_in_scope(file_path: str, scope_product_ids: set[str]) -> bool:
+    """Return True if any product_id in the file_path is in the allowed scope set."""
+    found = _extract_product_ids_from_file_path(file_path)
+    return bool(found & scope_product_ids)
+
+
+def _apply_scope_filter(
+    search_result: dict[str, Any],
+    scope_product_ids: set[str],
+) -> dict[str, Any]:
+    """
+    Post-filter search results to only include items belonging to scoped product IDs.
+
+    Filters:
+      - final_entities: by file_path on the entity dict
+      - final_relations: by file_path on the relation dict (from edge properties)
+      - vector_chunks: by file_path on the chunk dict
+
+    Items without a file_path are kept (fail-open for safety).
+    """
+    filtered_entities = []
+    for entity in search_result["final_entities"]:
+        fp = entity.get("file_path", "")
+        if not fp or _is_in_scope(fp, scope_product_ids):
+            filtered_entities.append(entity)
+
+    filtered_relations = []
+    for relation in search_result["final_relations"]:
+        fp = relation.get("file_path", "")
+        if not fp or _is_in_scope(fp, scope_product_ids):
+            filtered_relations.append(relation)
+
+    filtered_chunks = []
+    filtered_chunk_ids = set()
+    for chunk in search_result["vector_chunks"]:
+        fp = chunk.get("file_path", "")
+        if not fp or _is_in_scope(fp, scope_product_ids):
+            filtered_chunks.append(chunk)
+        else:
+            cid = chunk.get("chunk_id") or chunk.get("id")
+            if cid:
+                filtered_chunk_ids.add(cid)
+
+    # Clean up chunk_tracking for removed chunks
+    chunk_tracking = dict(search_result.get("chunk_tracking", {}))
+    for cid in filtered_chunk_ids:
+        chunk_tracking.pop(cid, None)
+
+    orig_e = len(search_result["final_entities"])
+    orig_r = len(search_result["final_relations"])
+    orig_c = len(search_result["vector_chunks"])
+    dropped_e = orig_e - len(filtered_entities)
+    dropped_r = orig_r - len(filtered_relations)
+    dropped_c = orig_c - len(filtered_chunks)
+    logger.info(
+        f"[partner-scope] context filter applied — "
+        f"entities: {orig_e}→{len(filtered_entities)} (dropped {dropped_e}), "
+        f"relations: {orig_r}→{len(filtered_relations)} (dropped {dropped_r}), "
+        f"chunks: {orig_c}→{len(filtered_chunks)} (dropped {dropped_c}), "
+        f"scope size: {len(scope_product_ids)} product IDs"
+    )
+
+    return {
+        **search_result,
+        "final_entities": filtered_entities,
+        "final_relations": filtered_relations,
+        "vector_chunks": filtered_chunks,
+        "chunk_tracking": chunk_tracking,
+    }
 
 
 def chunking_by_token_size(
@@ -3484,6 +3574,22 @@ async def _build_query_context(
         logger.warning("Query is empty, skipping context building")
         return ""
 
+    # Apply over-fetch multiplier when scope filtering is active
+    effective_param = query_param
+    if query_param.scope_product_ids:
+        effective_param = copy(query_param)
+        m = query_param.scope_overfetch_multiplier
+        effective_param.top_k = query_param.top_k * m
+        if query_param.chunk_top_k:
+            effective_param.chunk_top_k = query_param.chunk_top_k * m
+        logger.info(
+            f"[partner-scope] scope filter ACTIVE with {len(query_param.scope_product_ids)} product IDs, "
+            f"over-fetching {m}x (top_k {query_param.top_k}→{effective_param.top_k}, "
+            f"chunk_top_k {query_param.chunk_top_k}→{effective_param.chunk_top_k})"
+        )
+    else:
+        logger.info("[partner-scope] no scope set — unscoped query")
+
     # Stage 1: Pure search
     search_result = await _perform_kg_search(
         query,
@@ -3493,9 +3599,15 @@ async def _build_query_context(
         entities_vdb,
         relationships_vdb,
         text_chunks_db,
-        query_param,
+        effective_param,
         chunks_vdb,
     )
+
+    # Stage 1.5: Apply scope filter (post-filter by product IDs)
+    if query_param.scope_product_ids:
+        search_result = _apply_scope_filter(
+            search_result, query_param.scope_product_ids
+        )
 
     if not search_result["final_entities"] and not search_result["final_relations"]:
         if query_param.mode != "mix":
@@ -3524,6 +3636,19 @@ async def _build_query_context(
         chunk_tracking=search_result["chunk_tracking"],
         query_embedding=search_result["query_embedding"],
     )
+
+    # Stage 3.5: Final scope filter on merged chunks (catches KG-expanded chunks)
+    if query_param.scope_product_ids and merged_chunks:
+        pre_count = len(merged_chunks)
+        merged_chunks = [
+            c for c in merged_chunks
+            if not c.get("file_path") or _is_in_scope(c["file_path"], query_param.scope_product_ids)
+        ]
+        dropped = pre_count - len(merged_chunks)
+        logger.info(
+            f"[partner-scope] merged-chunk filter: {pre_count}→{len(merged_chunks)} "
+            f"(dropped {dropped} out-of-scope chunks)"
+        )
 
     if (
         not merged_chunks
