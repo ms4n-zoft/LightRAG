@@ -3,8 +3,8 @@ FROM python:3.12-slim AS builder
 
 WORKDIR /app
 
-# Upgrade pip、setuptools and wheel to the latest version
-RUN pip install --upgrade pip setuptools wheel
+# Keep setuptools<81 because pymilvus still depends on pkg_resources
+RUN pip install --upgrade pip wheel "setuptools<81"
 
 # Install Rust and required build dependencies
 RUN apt-get update && apt-get install -y \
@@ -51,8 +51,8 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Upgrade pip and setuptools
-RUN pip install --upgrade pip setuptools wheel
+# Keep setuptools<81 because pymilvus still depends on pkg_resources
+RUN pip install --upgrade pip wheel "setuptools<81"
 
 # Copy only necessary files from builder
 COPY --from=builder /root/.local /root/.local

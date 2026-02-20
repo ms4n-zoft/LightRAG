@@ -1,0 +1,33 @@
+services:
+  valkey-test:
+    image: valkey/valkey:8-alpine
+    container_name: valkey-test
+    command: ["valkey-server", "--dir", "/data", "--dbfilename", "dump.rdb", "--appendonly", "no", "--save", ""]
+    ports:
+      - "6380:6379"
+    volumes:
+      - ./data/valkey-test:/data
+    restart: unless-stopped
+
+  lightrag-test:
+    container_name: lightrag-test
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      - valkey-test
+    ports:
+      - "${PORT:-9621}:9621"
+    volumes:
+      - ./data/rag_storage:/app/data/rag_storage
+      - ./data/inputs:/app/data/inputs
+      - ./data/tiktoken:/app/data/tiktoken
+      - ./config.ini:/app/config.ini
+      - ./.env.test:/app/.env
+    env_file:
+      - .env.test
+    environment:
+      - TIKTOKEN_CACHE_DIR=/app/data/tiktoken
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
