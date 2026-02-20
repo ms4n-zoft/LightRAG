@@ -158,6 +158,18 @@ class QueryParam:
     Default is True to enable reranking when rerank model is available.
     """
 
+    scope_product_ids: set[str] | None = None
+    """Optional set of product IDs to scope the query context to.
+    When set, only entities, relations, and chunks belonging to these product IDs
+    will be included in the context sent to the LLM.
+    Product IDs are matched against the file_path field (format: product_id:<id>:source:...).
+    """
+
+    scope_overfetch_multiplier: int = 3
+    """When scope_product_ids is set, over-fetch this many times more results from VDB
+    to compensate for post-filtering. E.g., if top_k=60 and multiplier=3, fetch 180 results.
+    """
+
 
 @dataclass
 class StorageNameSpace(ABC):
