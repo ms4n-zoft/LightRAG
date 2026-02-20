@@ -14,6 +14,7 @@ from ..utils_api import get_combined_auth_dependency
 from pydantic import BaseModel, Field, field_validator
 
 from ascii_colors import trace_exception
+from lightrag.services.partner_scope_service import get_partner_scope_service
 
 router = APIRouter(tags=["query"])
 
@@ -21,7 +22,9 @@ router = APIRouter(tags=["query"])
 async def with_timeout(coro, timeout_seconds: int = 300, operation_name: str = "operation"):
     """Execute a coroutine with timeout handling"""
     try:
+        logging.info(f"with_timeout: starting await for {operation_name}")
         result = await asyncio.wait_for(coro, timeout=timeout_seconds)
+        logging.info(f"with_timeout: await completed for {operation_name}, result type: {type(result).__name__}")
         return result
     except asyncio.TimeoutError:
         logging.error(f"{operation_name} timed out after {timeout_seconds}s")
@@ -116,6 +119,12 @@ class QueryRequest(BaseModel):
         description="Enable reranking for retrieved text chunks. If True but no rerank model is configured, a warning will be issued. Default is True.",
     )
 
+    partner_id: Optional[str] = Field(
+        default=None,
+        description="Partner identifier for scoped queries (e.g., 'peko'). "
+        "When set, only products belonging to this partner will be included in the context.",
+    )
+
     @field_validator("query", mode="after")
     @classmethod
     def query_strip_after(cls, query: str) -> str:
@@ -138,7 +147,10 @@ class QueryRequest(BaseModel):
     def to_query_params(self, is_stream: bool) -> "QueryParam":
         """Converts a QueryRequest instance into a QueryParam instance."""
         # Use Pydantic's `.model_dump(exclude_none=True)` to remove None values automatically
-        request_data = self.model_dump(exclude_none=True, exclude={"query"})
+        # Exclude partner_id — it's resolved to scope_product_ids separately
+        request_data = self.model_dump(
+            exclude_none=True, exclude={"query", "partner_id"}
+        )
 
         # Ensure `mode` and `stream` are set explicitly
         param = QueryParam(**request_data)
@@ -192,6 +204,31 @@ def create_query_routes(rag, api_key: Optional[str] = None, top_k: int = 60):
         try:
             param = request.to_query_params(False)
 
+            # Log partner scope intent
+            if request.partner_id:
+                logging.info(
+                    f"[partner-request:{request.partner_id}] /query received with partner scope"
+                )
+
+            # Resolve partner scope if provided
+            if request.partner_id:
+                scope_service = get_partner_scope_service()
+                product_ids = await scope_service.get_scope_product_ids(request.partner_id)
+                if product_ids is None:
+                    logging.warning(
+                        f"[partner-request:{request.partner_id}] unknown partner_id, rejecting"
+                    )
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Unknown partner_id: {request.partner_id}",
+                    )
+                param.scope_product_ids = product_ids
+                logging.info(
+                    f"[partner-request:{request.partner_id}] scope resolved → {len(product_ids)} product IDs loaded into QueryParam"
+                )
+            else:
+                logging.info("[partner-request:none] /query request has no partner_id (unscoped)")
+
             # time context retrieval and llm generation
             context_start = time.time()
             logging.info(f"starting query: {request.query[:100]}...")
@@ -241,6 +278,31 @@ def create_query_routes(rag, api_key: Optional[str] = None, top_k: int = 60):
         start_time = time.time()
         try:
             param = request.to_query_params(True)
+
+            # Log partner scope intent
+            if request.partner_id:
+                logging.info(
+                    f"[partner-request:{request.partner_id}] /query/stream received with partner scope"
+                )
+
+            # Resolve partner scope if provided
+            if request.partner_id:
+                scope_service = get_partner_scope_service()
+                product_ids = await scope_service.get_scope_product_ids(request.partner_id)
+                if product_ids is None:
+                    logging.warning(
+                        f"[partner-request:{request.partner_id}] unknown partner_id, rejecting"
+                    )
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Unknown partner_id: {request.partner_id}",
+                    )
+                param.scope_product_ids = product_ids
+                logging.info(
+                    f"[partner-request:{request.partner_id}] scope resolved → {len(product_ids)} product IDs loaded into QueryParam"
+                )
+            else:
+                logging.info("[partner-request:none] /query/stream request has no partner_id (unscoped)")
 
             # time context retrieval and llm generation
             context_start = time.time()
@@ -320,6 +382,31 @@ def create_query_routes(rag, api_key: Optional[str] = None, top_k: int = 60):
         try:
             # No streaming for data endpoint
             param = request.to_query_params(False)
+
+            # Log partner scope intent
+            if request.partner_id:
+                logging.info(
+                    f"[partner-request:{request.partner_id}] /query/data received with partner scope"
+                )
+
+            # Resolve partner scope if provided
+            if request.partner_id:
+                scope_service = get_partner_scope_service()
+                product_ids = await scope_service.get_scope_product_ids(request.partner_id)
+                if product_ids is None:
+                    logging.warning(
+                        f"[partner-request:{request.partner_id}] unknown partner_id, rejecting"
+                    )
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Unknown partner_id: {request.partner_id}",
+                    )
+                param.scope_product_ids = product_ids
+                logging.info(
+                    f"[partner-request:{request.partner_id}] scope resolved → {len(product_ids)} product IDs loaded into QueryParam"
+                )
+            else:
+                logging.info("[partner-request:none] /query/data request has no partner_id (unscoped)")
 
             # time context retrieval only (no llm generation)
             context_start = time.time()
