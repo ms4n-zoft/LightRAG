@@ -25,6 +25,7 @@ Add `partner_id` to your `/query` request:
 ```
 
 Key fields:
+
 - **`query`** — the business question (keep it clean, no formatting instructions here — this text goes through keyword extraction)
 - **`partner_id`** — partner identifier (currently only `"peko"` is configured)
 - **`mode`** — use `"hybrid"` for best results (combines local graph + global + vector search)
@@ -38,6 +39,7 @@ Omit the field or set it to `null` — the query runs unscoped against the full 
 ### 3. Authentication
 
 All requests require the `X-API-Key` header:
+
 ```
 X-API-Key: <your-api-key>
 ```
@@ -66,12 +68,14 @@ Product IDs are cached in memory for 1 hour (configurable via `PARTNER_SCOPE_CAC
 1. **Create the partner's MongoDB database** with a `products` collection. Each document needs an `_id` matching the product IDs in the RAG store.
 
 2. **Add env vars** for the new partner's MongoDB connection:
+
    ```
    NEWPARTNER_MONGO_URI=mongodb://...
    NEWPARTNER_DB_NAME=NewPartnerDB
    ```
 
 3. **Add a `PartnerConfig`** in `lightrag/services/partner_scope_service.py`:
+
    ```python
    PARTNER_CONFIGS: dict[str, PartnerConfig] = {
        "peko": PartnerConfig(...),
@@ -97,6 +101,7 @@ Product IDs are cached in memory for 1 hour (configurable via `PARTNER_SCOPE_CAC
 ## Logging
 
 All scope operations are logged with `[partner-scope]` prefix:
+
 ```
 [partner-request:peko] /query received with partner scope
 [partner-request:peko] scope resolved → 4741 product IDs loaded into QueryParam
@@ -108,6 +113,7 @@ All scope operations are logged with `[partner-scope]` prefix:
 ## Testing
 
 Run the E2E test suite:
+
 ```bash
 python tests/test_scoped_query_e2e.py --max-cases 24 --max-recos 8 --timeout 300
 ```

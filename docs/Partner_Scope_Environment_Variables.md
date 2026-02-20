@@ -4,16 +4,16 @@ Environment variables required for the partner-scoped query service.
 
 ## Required
 
-| Variable | Example | Description |
-|---|---|---|
-| `PEKO_MONGO_URI` | `mongodb://host.docker.internal:27017/?directConnection=true` | MongoDB connection URI for the Peko partner database. When running inside Docker, use `host.docker.internal` instead of `localhost` to reach the host machine's MongoDB. |
-| `PEKO_DB_NAME` | `PekoPartnerDB` | Database name containing the partner's `products` collection. Each document must have an `_id` field whose string representation matches the product IDs used in the RAG store (`product_id:<hex_id>:source:...` format). |
+| Variable         | Example                                                       | Description                                                                                                                                                                                                               |
+| ---------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PEKO_MONGO_URI` | `mongodb://host.docker.internal:27017/?directConnection=true` | MongoDB connection URI for the Peko partner database. When running inside Docker, use `host.docker.internal` instead of `localhost` to reach the host machine's MongoDB.                                                  |
+| `PEKO_DB_NAME`   | `PekoPartnerDB`                                               | Database name containing the partner's `products` collection. Each document must have an `_id` field whose string representation matches the product IDs used in the RAG store (`product_id:<hex_id>:source:...` format). |
 
 ## Optional
 
-| Variable | Default | Description |
-|---|---|---|
-| `PARTNER_SCOPE_CACHE_TTL` | `3600` | How long (in seconds) to cache the partner's product ID set in memory before re-fetching from MongoDB. |
+| Variable                  | Default | Description                                                                                            |
+| ------------------------- | ------- | ------------------------------------------------------------------------------------------------------ |
+| `PARTNER_SCOPE_CACHE_TTL` | `3600`  | How long (in seconds) to cache the partner's product ID set in memory before re-fetching from MongoDB. |
 
 ## Where to set them
 
